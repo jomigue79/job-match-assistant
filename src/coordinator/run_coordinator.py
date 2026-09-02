@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from datetime import datetime, timezone
 from typing import Optional
 import uuid
@@ -52,7 +51,7 @@ class RunCoordinator:
         )
         
         self._active_run: Optional[Run] = None
-        self._active_task: Optional[Any] = None
+        self._active_task: Optional[asyncio.Task] = None
 
     def start_run(self, query: Optional[ScrapeQuery] = None) -> Run:
         """
@@ -72,7 +71,17 @@ class RunCoordinator:
         # Synchronous check-and-set lock BEFORE any await
         if self._active_run is not None and self._active_run.status == RunStatus.RUNNING:
             raise RunAlreadyActiveError("A run is already active.")
-            
+
+        # A run executes as a task on the caller's event loop. Acquire the loop
+        # before constructing the Run so a failure leaves no phantom RUNNING run.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError as e:
+            raise RuntimeError(
+                "start_run() requires a running asyncio event loop; "
+                "call it from async context (the NiceGUI server loop)."
+            ) from e
+
         run = Run(
             run_id=str(uuid.uuid4()),
             source=self.source_name,
@@ -80,17 +89,8 @@ class RunCoordinator:
             started_at=datetime.now(timezone.utc)
         )
         self._active_run = run
-        
-        try:
-            loop = asyncio.get_running_loop()
-            self._active_task = loop.create_task(self._execute_run(run, query))
-        except RuntimeError:
-            def _thread_target():
-                asyncio.run(self._execute_run(run, query))
-            thread = threading.Thread(target=_thread_target, daemon=True)
-            thread.start()
-            self._active_task = thread
-        
+        self._active_task = loop.create_task(self._execute_run(run, query))
+
         return run
 
     async def _execute_run(self, run: Run, query: ScrapeQuery) -> None:
@@ -201,11 +201,8 @@ class RunCoordinator:
         Guarantees status is synchronized if background execution has completed.
         """
         if self._active_run is not None and self._active_run.status == RunStatus.RUNNING:
-            if self._active_task is not None:
-                if isinstance(self._active_task, threading.Thread) and not self._active_task.is_alive():
-                    self._active_run.status = RunStatus.DONE if self._active_run.n_errors == 0 else RunStatus.FAILED
-                elif isinstance(self._active_task, asyncio.Task) and self._active_task.done():
-                    self._active_run.status = RunStatus.DONE if self._active_run.n_errors == 0 else RunStatus.FAILED
+            if self._active_task is not None and self._active_task.done():
+                self._active_run.status = RunStatus.DONE if self._active_run.n_errors == 0 else RunStatus.FAILED
         return self._active_run
 
     async def wait(self) -> None:
@@ -213,10 +210,7 @@ class RunCoordinator:
         Awaits the current active background run task if it is running.
         """
         if self._active_task is not None:
-            if isinstance(self._active_task, asyncio.Task):
-                await self._active_task
-            elif hasattr(self._active_task, "join"):
-                await asyncio.to_thread(self._active_task.join)
+            await self._active_task
 
     async def sync_ledger(self) -> None:
         """
