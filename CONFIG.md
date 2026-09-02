@@ -66,6 +66,7 @@ This document provides a detailed reference for all configuration options suppor
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | Target verbosity level of system execution logs. |
 | `UI_HOST` | `127.0.0.1` | Valid host IP | Interface address NiceGUI/Streamlit UI server binds to. |
 | `UI_PORT` | `8080` | Valid port | Port the web dashboard exposes. |
+| `UI_EXIT_GRACE_SECONDS` | `5` | `value >= 0` | Seconds to wait after the last browser tab disconnects before the server shuts down. Absorbs page refreshes. |
 
 ---
 

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from datetime import datetime, timezone
 from typing import Optional
 import uuid
@@ -141,7 +142,12 @@ class RunCoordinator:
                     await self.sync_ledger()
                 except Exception as sync_err:
                     logger.warning("Google Sheet sync failed during coordinator run, continuing...", error=str(sync_err))
-                
+
+            except asyncio.CancelledError:
+                run.status = RunStatus.FAILED
+                logger.warning("Run cancelled during shutdown", run_id=run.run_id)
+                raise
+
             except Exception as e:
                 run.status = RunStatus.FAILED
                 run.n_errors += 1
@@ -211,6 +217,38 @@ class RunCoordinator:
         """
         if self._active_task is not None:
             await self._active_task
+
+    async def shutdown(self) -> None:
+        """
+        Cancels any in-flight run and records it as failed before the process exits.
+        Idempotent and non-raising: a failure to persist is logged, never propagated.
+        """
+        task = self._active_task
+        if task is None or task.done():
+            return
+
+        # Awaiting the cancelled task and recording its outcome are independent
+        # operations with independent failure paths. _execute_run's own finally
+        # writes the run too, and if that write raises, the exception surfaces
+        # here out of `await task`. Sharing one try block would let that failure
+        # skip our write entirely, leaving no failed row at all.
+        try:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        except Exception as e:
+            logger.warning("Cancelled run raised while unwinding", error=str(e))
+
+        try:
+            run = self._active_run
+            if run is not None:
+                run.n_errors += 1
+                run.status = RunStatus.FAILED
+                run.finished_at = datetime.now(timezone.utc)
+                await self.persistence_service.save_run(run)
+                logger.info("In-flight run cancelled and recorded as failed", run_id=run.run_id)
+        except Exception as e:
+            logger.exception("Shutdown failed to record cancelled run", error=str(e))
 
     async def sync_ledger(self) -> None:
         """
