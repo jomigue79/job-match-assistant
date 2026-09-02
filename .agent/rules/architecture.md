@@ -4,7 +4,7 @@ trigger: always_on
 
 # Architectural Guardrails & Seams
 
-- **Core Tech Stack**: Python 3.11+, Streamlit (for both User Interface and Async Pipeline Monitoring), SQLite (System of Record).
+- **Core Tech Stack**: Python 3.14, NiceGUI (single User Interface; the pipeline runs as an asyncio task on the UI's event loop), SQLite (System of Record).
 - **Architecture Philosophy**: Clean Architecture / Modular Monolith. Highly decoupled.
 - **Persistence Boundary**: Database must use SQLite with Write-Ahead Logging (`PRAGMA journal_mode=WAL;`). All schema changes must eventually be trackable via code.
 - **Downstream Synchronization**: The spreadsheet is treated strictly as an output target. The system must not read from an external spreadsheet to resolve pipeline state.

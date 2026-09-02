@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     ui_host: str = Field(default="127.0.0.1", validation_alias="UI_HOST")
     ui_port: int = Field(default=8080, validation_alias="UI_PORT")
+    ui_exit_grace_seconds: float = Field(default=5.0, validation_alias="UI_EXIT_GRACE_SECONDS")
 
     @field_validator("score_threshold")
     @classmethod
