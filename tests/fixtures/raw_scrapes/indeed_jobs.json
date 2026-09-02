@@ -1,0 +1,28 @@
+{
+  "source": "apify_indeed",
+  "query": {
+    "terms": "Data Scientist",
+    "location": "New York",
+    "limit": 3
+  },
+  "fetched_at": "2026-06-10T13:00:00+00:00",
+  "count": 2,
+  "records": [
+    {
+      "company": "Finance Corp",
+      "title": "Lead Data Scientist",
+      "location": "New York, NY",
+      "url": "https://indeed.com/viewjob/1",
+      "description": "Develop and deploy machine learning models.",
+      "benefits": ["401k", "Health"]
+    },
+    {
+      "company": "Meta",
+      "title": "Research Scientist",
+      "location": "Remote",
+      "url": "https://indeed.com/viewjob/2",
+      "description": null,
+      "requirements": "PhD in Computer Science"
+    }
+  ]
+}

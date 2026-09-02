@@ -1,0 +1,166 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+*.log.[0-9]*
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Sphinx documentation
+doc/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to share your .python-version.
+#   For an app, this can be useful so that everyone uses the same version.
+#.python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in git.
+#   However, in case of collaboration, if the system has different version of python,
+#   Pipfile.lock might fail, so one can comment it out.
+#Pipfile.lock
+
+# poetry
+#   Similar to Pipfile.lock, poetry.lock can be gitignored or not.
+#poetry.lock
+
+# pdm
+#   Similar to Pipfile.lock, pdm.lock can be gitignored or not.
+#pdm.lock
+
+# PEP 582; used by e.g. pdm
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Streamlit
+.streamlit/
+
+# Database files & raw scrapes
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/raw_scrapes/*
+!data/raw_scrapes/.gitkeep
+
+# Live knowledge profile files (excludes personal data)
+data/knowledge/cv.md
+data/knowledge/persona.md
+data/knowledge/ats_criteria.md
+
+# Backups
+data/backups/
+
+# Service account credentials
+secrets/
+
+# Repo clutter pending removal (WORK_ORDER batch 8 / audit C4)
+terminal_output.txt
+review.md
+foundation-review.zip
+dataset_*.json

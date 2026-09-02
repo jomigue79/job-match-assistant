@@ -1,0 +1,31 @@
+# ATS Match Criteria & Scoring Rubric
+
+Copy this file to knowledge/ats_criteria.md and edit the weights and hard
+constraints to match your priorities. The Scorer reads this verbatim to score a
+posting 0–100 against cv.md.
+
+## Scoring philosophy
+Reward concrete overlap between the posting's stated requirements and the
+candidate's demonstrable experience. Reward evidence, not adjacency. A skill counts
+only if it appears in the CV; never infer skills the candidate has not stated.
+
+## Dimensions and weights (sum to 100)
+1. Hard requirements match — 35
+   Required skills, tools, certifications, degree, and minimum years explicitly
+   demanded. Missing a stated *required* item caps this dimension low.
+2. Skills / keyword overlap — 25
+   Overlap between the posting's named technologies/skills and the CV's.
+3. Title & seniority alignment — 15
+   Match of role title/seniority to the candidate's level; penalize large
+   mismatches in either direction.
+4. Domain / industry relevance — 15
+   Relevance of the candidate's domain experience to the posting's sector.
+5. Nice-to-haves — 10
+   Preferred-but-not-required items.
+
+## Hard constraints (deal-breakers) — EDIT THESE
+If a posting violates any of these, set the overall score to 0 and name the failed
+constraint in the match reasons.
+- Location / remote: <e.g. remote-only, or within X of CITY — FILL IN>
+- Work authorization / relocation: <FILL IN>
+- Minimum compensation: <FILL IN>

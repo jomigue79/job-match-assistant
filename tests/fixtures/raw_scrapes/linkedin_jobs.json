@@ -1,0 +1,29 @@
+{
+  "source": "apify_linkedin",
+  "query": {
+    "terms": "Software Engineer",
+    "location": "Remote",
+    "limit": 5
+  },
+  "fetched_at": "2026-06-10T12:00:00+00:00",
+  "count": 2,
+  "records": [
+    {
+      "company": "  Acme   Corp. ",
+      "title": "Sénior Dev",
+      "location": "Lisboa",
+      "url": "https://linkedin.com/jobs/view/1",
+      "description": "This is a great role for a Senior Developer in Lisbon.",
+      "postedTime": "2 days ago",
+      "extraNoise": "some noise values"
+    },
+    {
+      "company": "Google",
+      "title": "Staff Engineer",
+      "location": null,
+      "url": "https://linkedin.com/jobs/view/2",
+      "description": "Looking for a Staff Engineer. No location specified.",
+      "salaryRange": "$150,000 - $200,000"
+    }
+  ]
+}
