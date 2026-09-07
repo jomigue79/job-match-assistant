@@ -152,6 +152,9 @@ data/raw_scrapes/*
 data/knowledge/cv.md
 data/knowledge/persona.md
 data/knowledge/ats_criteria.md
+data/knowledge/*.bak
+data/knowledge/*.old
+data/knowledge/*.orig
 
 # Backups
 data/backups/
