@@ -1,31 +1,116 @@
-# ATS Match Criteria & Scoring Rubric
+# Job Evaluation Criteria — template
 
-Copy this file to knowledge/ats_criteria.md and edit the weights and hard
-constraints to match your priorities. The Scorer reads this verbatim to score a
-posting 0–100 against cv.md.
+Copy this file to `ats_criteria.md` in the same directory and fill in the
+bracketed values. `ats_criteria.md` is gitignored; this template is not, so keep
+personal details out of it.
 
-## Scoring philosophy
-Reward concrete overlap between the posting's stated requirements and the
-candidate's demonstrable experience. Reward evidence, not adjacency. A skill counts
-only if it appears in the CV; never infer skills the candidate has not stated.
+The Scorer interpolates your `ats_criteria.md` verbatim into every scoring
+prompt, above the CV and the job posting. Write it as instructions to a model,
+not as a document for a human reader.
 
-## Dimensions and weights (sum to 100)
-1. Hard requirements match — 35
-   Required skills, tools, certifications, degree, and minimum years explicitly
-   demanded. Missing a stated *required* item caps this dimension low.
-2. Skills / keyword overlap — 25
-   Overlap between the posting's named technologies/skills and the CV's.
-3. Title & seniority alignment — 15
-   Match of role title/seniority to the candidate's level; penalize large
-   mismatches in either direction.
-4. Domain / industry relevance — 15
-   Relevance of the candidate's domain experience to the posting's sector.
-5. Nice-to-haves — 10
-   Preferred-but-not-required items.
+## 0. Scoring mechanics
 
-## Hard constraints (deal-breakers) — EDIT THESE
-If a posting violates any of these, set the overall score to 0 and name the failed
-constraint in the match reasons.
-- Location / remote: <e.g. remote-only, or within X of CITY — FILL IN>
-- Work authorization / relocation: <FILL IN>
-- Minimum compensation: <FILL IN>
+- Each soft dimension in §3 is scored **0 to 100 independently**. Do not scale a
+  dimension by its weight. Do not make the dimensions sum to 100 between them.
+- The final `score` is the weighted sum, rounded to the nearest integer. State
+  the formula literally so the arithmetic is checkable:
+
+      score = round(0.30*d1 + 0.25*d2 + 0.15*d3 + 0.15*d4 + 0.15*d5)
+
+- A failed hard gate overrides everything: `score` 0, all dimensions 0, one entry
+  in `reasons` naming the gate.
+
+Keep the weights summing to 100.
+
+## 1. Hard gates — binary, evaluated first
+
+**A gate fires only on evidence stated in the posting.** If the posting does not
+say enough to evaluate a gate, that gate does not fire. Absence of evidence is
+not failure. State this rule in your own file; without it, models gate on
+guesses.
+
+1. **Language** — a required working language you do not have.
+   <LIST THE LANGUAGES YOU CAN WORK IN>
+2. **Location** — on-site or hybrid outside the area you will travel to.
+   <LIST ACCEPTABLE CITIES OR REGIONS, AND YOUR REMOTE POLICY>
+3. **Work authorization** — sponsorship required where you would need it.
+   <STATE WHERE YOU ALREADY HOLD THE RIGHT TO WORK>
+4. **Seniority floor** — an explicit stated minimum above your actual years.
+   Gate only on a stated number. An unquantified "Senior" is scored, not gated.
+   <STATE YOUR YEARS OF RELEVANT EXPERIENCE>
+5. **Contract** — engagement types you refuse outright.
+   <e.g. unpaid, commission-only, internship>
+
+## 2. Candidate constraints — reference for the gates
+
+<RESTATE THE ABOVE AS PLAIN FACTS: languages, location and remote policy, work
+authorization, years of experience, acceptable engagement types.
+
+Derive these from your own decisions. Do not derive them from your CV, and do
+not derive them from your writing persona — a writing persona describes voice,
+not job preferences.>
+
+## 3. Soft dimensions — score each 0 to 100
+
+Weights must sum to 100. Every dimension needs a written reason in `reasons`.
+
+**Write dimensions that measure the POSTING, or the posting against the CV.**
+A dimension that measures only the CV returns the same value on every job,
+contributes no signal, and its weight is wasted. This is the most common way a
+criteria file goes wrong.
+
+| Dimension | Weight | Measures |
+| --- | --- | --- |
+| <Role content> | 30 | How much of this job is the work you want to do |
+| <Requirements coverage> | 25 | Proportion of the posting's stated must-haves your CV evidences |
+| <Domain-specific dimension> | 15 | Something about the role, evidenced against the CV |
+| <Seniority & scope> | 15 | Team size, ownership, reporting line against your level |
+| <Context> | 15 | Sector, contract, working language, remote policy |
+
+For each dimension give explicit 0–100 bands (for example 80–100 / 50–79 /
+20–49 / 0–19) with concrete signals a model can look for. Vague dimensions
+produce flat distributions that carry no information.
+
+**Requirements coverage with no stated must-haves:** score 50, not 0 and not
+100, and say so in `reasons`. The CV has failed to cover nothing, and nothing has
+been demonstrated either. 50 neither rewards nor punishes a vague posting.
+
+If your CV states a certification that is a recognised equivalent of one a
+posting asks for, say so explicitly in this section. That is an equivalence, not
+an inference, and a model will not assume it on your behalf.
+
+## 4. Flags — in `reasons`, never in the score
+
+Prefix each `FLAG:`. Flags never change a dimension and never change the score.
+
+- No salary range where the market or law expects one
+- "Fast-paced", "wear many hats", "rockstar" clustered together
+- More years required in a technology than that technology has existed
+- Unpaid or commission-only framing for what is described as full-time work
+- Any stated preference on a protected characteristic
+- Largely boilerplate with no description of the actual work
+
+## 5. Never score on protected characteristics
+
+Age, nationality, gender, family status, health or disability, religion,
+political affiliation, union membership. Never an input to any dimension and
+never an input to the score.
+
+A posting stating a preference on any of these is a red flag about the employer:
+flag it under §4 and score the role on its content.
+
+Work authorization is distinct from nationality. A statement that you must
+already hold the right to work in a territory is a work-authorization matter and
+belongs to gate 3. A statement restricting the role to one nationality is a
+protected-characteristic preference: flag it, do not gate on it.
+
+## 6. Output
+
+Return only the JSON object, with your five dimension keys exactly as named in
+§3:
+
+    {
+      "score": integer 0-100, the weighted sum,
+      "dimensions": { "key 1": integer 0-100, "key 2": integer 0-100 },
+      "reasons": ["one per dimension", "FLAG: ..."]
+    }
