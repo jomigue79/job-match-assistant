@@ -1,3 +1,4 @@
+import ast
 from datetime import datetime, timezone
 from enum import Enum
 import hashlib
@@ -73,6 +74,48 @@ def normalize_field(val: str | None) -> str:
     
     # f. strip leading/trailing whitespace
     return collapsed.strip()
+
+def display_location(val: str | None) -> str | None:
+    """
+    Presentation-only rendering of a stored location.
+
+    Some sources return location as an object, and the ingestion adapters
+    stringify it with str(), yielding a Python dict repr rather than JSON.
+    This returns the human-readable 'raw' value when it can, and the input
+    unchanged otherwise.
+
+    NOT used by JobIdentity. The stored value and the identity hash are
+    unaffected -- see D7.
+    """
+    if val is None:
+        return None
+
+    text = val.strip()
+    # Only dict-shaped text is parsed. Without this guard, literal_eval would
+    # happily turn "41" into an int and "(1,2)" into a tuple.
+    if not (text.startswith("{") and text.endswith("}")):
+        return val
+
+    try:
+        # literal_eval, not json.loads: the stored text is a Python repr with
+        # single quotes, which is not valid JSON. literal_eval evaluates only
+        # literals and cannot execute code.
+        parsed = ast.literal_eval(text)
+    except (ValueError, SyntaxError):
+        return val
+
+    if not isinstance(parsed, dict):
+        return val
+
+    raw = parsed.get("raw")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+
+    locality = parsed.get("locality")
+    if isinstance(locality, str) and locality.strip():
+        return locality.strip()
+
+    return val
 
 class JobIdentity(BaseModel):
     """

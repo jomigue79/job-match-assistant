@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Any
 from nicegui import ui
 
-from domain import Run, RunStatus, JobPosting, JobStatus
+from domain import Run, RunStatus, JobPosting, JobStatus, display_location
 from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
 
@@ -111,7 +111,7 @@ def build_view_state(
                 identity_hash=job.identity_hash,
                 company=job.company or "Unknown Company",
                 title=job.title or "Unknown Title",
-                location=job.location or "Remote",
+                location=display_location(job.location) or "Remote",
                 url=job.url or "",
                 score=score_val,
                 dimension_breakdown=dim_val,
@@ -282,8 +282,18 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         transform: translateY(-2px);
         border-color: rgba(99, 102, 241, 0.3) !important;
     }
+    .q-dialog .glass-card {
+        background: rgba(15, 23, 42, 0.98) !important;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    .q-dialog .glass-card:hover {
+        transform: none;
+    }
     </style>
     ''')
+
+    ui.dark_mode().enable()
 
     generating_hashes = set()
 
@@ -293,6 +303,32 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
             ui.notify("Cover letter copied to clipboard!", type="positive", position="bottom-right")
         except RuntimeError as re:
             logger.warning("Could not copy to clipboard or show notification", error=str(re))
+
+    def show_letter_dialog(m: MatchCard) -> None:
+        """
+        Open the full letter in a dialog.
+
+        Created per click and cleared on close, per NiceGUI's guidance that a
+        Dialog is an element which is hidden rather than removed when closed.
+        Creating it here rather than in render_match_card also keeps it out of
+        the containers rebuild_cards clears, so an open dialog survives a rebuild.
+        """
+        with ui.dialog() as dialog, ui.card().classes("glass-card w-full max-w-3xl p-6 gap-4"):
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label(f"{m.company} — {m.title}").classes("text-base font-bold text-slate-100")
+                ui.label(f"v{m.letter_version}").classes("text-xs font-mono text-slate-400")
+            ui.separator().classes("bg-white/10")
+            ui.label(m.letter_text or "").style(
+                "white-space: pre-wrap; word-break: break-word; max-height: 65vh; "
+                "overflow-y: auto; width: 100%; line-height: 1.6;"
+            ).classes("text-sm text-slate-200")
+            with ui.row().classes("w-full justify-end gap-2 border-t border-white/10 pt-3"):
+                copy_btn = ui.button("Copy", on_click=lambda: copy_letter_to_clipboard(m.letter_text))
+                copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+                close_btn = ui.button("Close", on_click=dialog.close)
+                close_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+        dialog.on_value_change(lambda e: dialog.clear() if not e.value else None)
+        dialog.open()
 
     def handle_error_notify(msg: str):
         try:
@@ -516,10 +552,7 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     with ui.row().classes("w-full justify-between items-center text-xs text-slate-400 uppercase tracking-wider"):
                         ui.label(f"Cover Letter (v{m.letter_version})").classes("font-semibold text-indigo-300")
                         ui.label(f"Created: {m.letter_created_at.strftime('%Y-%m-%d %H:%M') if m.letter_created_at else ''}").classes("font-mono")
-                    
-                    with ui.column().classes("w-full p-3 bg-black/20 border border-white/5 rounded-lg text-slate-300 text-xs font-mono"):
-                        ui.label(m.letter_text).style("white-space: pre-wrap; word-break: break-word; max-height: 250px; overflow-y: auto; width: 100%;")
-                        
+
                     with ui.row().classes("w-full justify-between items-center mt-2 border-t border-white/5 pt-2"):
                         reject_btn = ui.button("Reject", on_click=lambda m=m: transition_to_rejected(m))
                         reject_btn.classes("bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-500/20")
@@ -528,9 +561,9 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                             apply_btn = ui.button("Mark Applied", on_click=lambda m=m: transition_to_applied(m))
                             apply_btn.classes("bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md")
                             
-                            copy_btn = ui.button("Copy", on_click=lambda m=m: copy_letter_to_clipboard(m.letter_text))
-                            copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
-                            
+                            view_btn = ui.button("View", on_click=lambda m=m: show_letter_dialog(m))
+                            view_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+
                             reg_btn_label = "Generating..." if is_generating else "Regenerate"
                             reg_btn = ui.button(reg_btn_label, on_click=lambda m=m: generate_letter(m))
                             reg_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50")
@@ -545,16 +578,13 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                         # Proxy for the application date; there is no applied_at column.
                         # Labelled honestly -- it is the letter's date, not the application's.
                         ui.label(f"Letter written: {m.letter_created_at.strftime('%Y-%m-%d')}" if m.letter_created_at else "").classes("font-mono")
-                    
-                    with ui.column().classes("w-full p-3 bg-black/20 border border-white/5 rounded-lg text-slate-300 text-xs font-mono"):
-                        ui.label(m.letter_text).style("white-space: pre-wrap; word-break: break-word; max-height: 250px; overflow-y: auto; width: 100%;")
-                        
+
                     with ui.row().classes("w-full justify-between items-center mt-2 border-t border-white/5 pt-2"):
                         reject_btn = ui.button("Withdraw / Reject", on_click=lambda m=m: transition_to_rejected(m))
                         reject_btn.classes("bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-500/20")
-                        
-                        copy_btn = ui.button("Copy", on_click=lambda m=m: copy_letter_to_clipboard(m.letter_text))
-                        copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+
+                        view_btn = ui.button("View", on_click=lambda m=m: show_letter_dialog(m))
+                        view_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
                 else:
                     with ui.row().classes("w-full justify-between items-center mt-2 border-t border-white/5 pt-2"):
                         reject_btn = ui.button("Withdraw / Reject", on_click=lambda m=m: transition_to_rejected(m))
