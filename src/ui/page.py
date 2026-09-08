@@ -6,7 +6,11 @@ from domain import Run, RunStatus, JobPosting, JobStatus
 from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+# Sort floor for applied cards whose letter_created_at is None. Substituted only
+# inside the sort key so datetime is never compared against None.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 @dataclass(frozen=True)
 class MatchCard:
@@ -158,9 +162,15 @@ def build_view_state(
     applied_count = get_count(JobStatus.APPLIED)
     rejected_count = get_count(JobStatus.REJECTED)
     
+    # Applied cards, newest letter first. letter_created_at is a proxy for the
+    # application date -- there is no applied_at column. None sorts last.
+    # Two stable passes: date descending, then partition None to the end.
+    applied.sort(key=lambda c: c.letter_created_at or _EPOCH, reverse=True)
+    applied.sort(key=lambda c: c.letter_created_at is None)
+
     # Signature
     cards_signature = f"{scraped_count}-{matched_count}-{no_match_count}-{written_count}-{applied_count}-{rejected_count}-{counters.total}"
-    
+
     return ViewState(
         status_text=status_text,
         n_scraped=n_scraped,
@@ -398,10 +408,22 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                         ui.label("Applied").classes("text-xs text-slate-450")
                         applied_counter = ui.label("0").classes("text-xl font-bold text-slate-200")
 
-        # Scraped Jobs Match Cards Container
+        # Tabbed job views. Header, status and metrics panels stay above, always visible.
         with ui.card().classes("glass-card w-full p-6 gap-4"):
-            ui.label("Ledger Match Analysis").classes("text-sm font-semibold tracking-wider text-slate-400 uppercase")
-            cards_container = ui.column().classes("w-full gap-2")
+            with ui.tabs().classes("w-full") as job_tabs:
+                tab_pipeline = ui.tab("Pipeline")
+                tab_applied = ui.tab("Applied")
+                tab_non_matches = ui.tab("Non-Matches")
+                tab_rejected = ui.tab("Rejected")
+            with ui.tab_panels(job_tabs, value=tab_pipeline).classes("w-full bg-transparent"):
+                with ui.tab_panel(tab_pipeline).classes("p-0"):
+                    pipeline_container = ui.column().classes("w-full gap-2")
+                with ui.tab_panel(tab_applied).classes("p-0"):
+                    applied_container = ui.column().classes("w-full gap-2")
+                with ui.tab_panel(tab_non_matches).classes("p-0"):
+                    non_matches_container = ui.column().classes("w-full gap-2")
+                with ui.tab_panel(tab_rejected).classes("p-0"):
+                    rejected_container = ui.column().classes("w-full gap-2")
 
     last_cards_signature = ""
 
@@ -520,7 +542,9 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     ui.separator().classes("bg-white/5 my-2")
                     with ui.row().classes("w-full justify-between items-center text-xs text-slate-400 uppercase tracking-wider"):
                         ui.label(f"Cover Letter (v{m.letter_version})").classes("font-semibold text-indigo-300")
-                        ui.label(f"Created: {m.letter_created_at.strftime('%Y-%m-%d %H:%M') if m.letter_created_at else ''}").classes("font-mono")
+                        # Proxy for the application date; there is no applied_at column.
+                        # Labelled honestly -- it is the letter's date, not the application's.
+                        ui.label(f"Letter written: {m.letter_created_at.strftime('%Y-%m-%d')}" if m.letter_created_at else "").classes("font-mono")
                     
                     with ui.column().classes("w-full p-3 bg-black/20 border border-white/5 rounded-lg text-slate-300 text-xs font-mono"):
                         ui.label(m.letter_text).style("white-space: pre-wrap; word-break: break-word; max-height: 250px; overflow-y: auto; width: 100%;")
@@ -542,11 +566,14 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     undo_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
 
     def rebuild_cards(vs: ViewState):
-        """Clears and rebuilds card elements upon state signature updates."""
-        cards_container.clear()
-        
-        with cards_container:
-            # 1. Matches Section
+        """Clears and rebuilds card elements in all four tab panels upon state signature updates."""
+        pipeline_container.clear()
+        applied_container.clear()
+        non_matches_container.clear()
+        rejected_container.clear()
+
+        # --- Pipeline tab: Strong Matches, then Pending Unscored ---
+        with pipeline_container:
             ui.label("Strong Matches").classes("text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-indigo-300 border-b border-white/5 pb-2 w-full mt-2")
             if not vs.matches:
                 ui.label("No matched postings found.").classes("text-slate-400 italic text-sm py-4")
@@ -555,30 +582,6 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     for m in vs.matches:
                         render_match_card(m, "active")
 
-            # 1b. Applied Section
-            ui.label("Applied Jobs").classes("text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-teal-300 border-b border-white/5 pb-2 w-full mt-4")
-            if not vs.applied:
-                ui.label("No applied postings found.").classes("text-slate-400 italic text-sm py-4")
-            else:
-                with ui.grid().classes("grid grid-cols-1 md:grid-cols-2 gap-6 w-full py-4"):
-                    for m in vs.applied:
-                        render_match_card(m, "applied")
-
-            # 2. Non-Matches Section
-            ui.label("Non-Matches").classes("text-lg font-bold text-slate-400 border-b border-white/5 pb-2 w-full mt-4")
-            if not vs.non_matches:
-                ui.label("No non-matched postings found.").classes("text-slate-450 italic text-sm py-4")
-            else:
-                with ui.column().classes("w-full gap-3 py-4"):
-                    for nm in vs.non_matches:
-                        with ui.row().classes("w-full justify-between items-center bg-white/2 hover:bg-white/4 p-3 rounded-xl border border-white/5 transition-all text-sm opacity-60"):
-                            with ui.row().classes("items-center gap-2"):
-                                ui.label(nm.company).classes("font-semibold text-slate-300")
-                                ui.label("•").classes("text-slate-500")
-                                ui.label(nm.title).classes("text-slate-400")
-                            ui.label(f"Score: {nm.score}").classes("text-xs font-mono font-semibold text-slate-455 bg-white/5 px-2.5 py-0.5 rounded-md")
-
-            # 3. Pending/Unscored Section
             ui.label("Pending Unscored Postings").classes("text-lg font-bold text-slate-400 border-b border-white/5 pb-2 w-full mt-4")
             if not vs.pending:
                 ui.label("No unscored postings pending.").classes("text-slate-455 italic text-sm py-4")
@@ -592,14 +595,37 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                                 ui.label(p.title).classes("text-slate-350")
                             ui.label("UNSCORED").classes("text-[10px] font-bold tracking-wider text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full")
 
-            # 4. Rejected Section (Collapsed expansion panel)
-            with ui.expansion("Rejected Matches", icon="delete").classes("w-full text-slate-400 border border-white/5 rounded-xl bg-white/1 mt-4"):
-                if not vs.rejected:
-                    ui.label("No rejected postings.").classes("text-slate-500 italic text-sm p-4")
-                else:
-                    with ui.grid().classes("grid grid-cols-1 md:grid-cols-2 gap-6 w-full p-4"):
-                        for m in vs.rejected:
-                            render_match_card(m, "rejected")
+        # --- Applied tab: newest letter first ---
+        with applied_container:
+            if not vs.applied:
+                ui.label("No applied postings found.").classes("text-slate-400 italic text-sm py-4")
+            else:
+                with ui.grid().classes("grid grid-cols-1 md:grid-cols-2 gap-6 w-full py-4"):
+                    for m in vs.applied:
+                        render_match_card(m, "applied")
+
+        # --- Non-Matches tab ---
+        with non_matches_container:
+            if not vs.non_matches:
+                ui.label("No non-matched postings found.").classes("text-slate-450 italic text-sm py-4")
+            else:
+                with ui.column().classes("w-full gap-3 py-4"):
+                    for nm in vs.non_matches:
+                        with ui.row().classes("w-full justify-between items-center bg-white/2 hover:bg-white/4 p-3 rounded-xl border border-white/5 transition-all text-sm opacity-60"):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(nm.company).classes("font-semibold text-slate-300")
+                                ui.label("•").classes("text-slate-500")
+                                ui.label(nm.title).classes("text-slate-400")
+                            ui.label(f"Score: {nm.score}").classes("text-xs font-mono font-semibold text-slate-455 bg-white/5 px-2.5 py-0.5 rounded-md")
+
+        # --- Rejected tab: plain list, the tab already does the hiding ---
+        with rejected_container:
+            if not vs.rejected:
+                ui.label("No rejected postings.").classes("text-slate-500 italic text-sm py-4")
+            else:
+                with ui.grid().classes("grid grid-cols-1 md:grid-cols-2 gap-6 w-full py-4"):
+                    for m in vs.rejected:
+                        render_match_card(m, "rejected")
 
     async def refresh():
         active_run = coordinator.get_active_run()
