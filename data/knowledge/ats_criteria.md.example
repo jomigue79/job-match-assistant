@@ -12,15 +12,22 @@ not as a document for a human reader.
 
 - Each soft dimension in §3 is scored **0 to 100 independently**. Do not scale a
   dimension by its weight. Do not make the dimensions sum to 100 between them.
-- The final `score` is the weighted sum, rounded to the nearest integer. State
-  the formula literally so the arithmetic is checkable:
+- **The model does not return a score.** It returns dimension values; the score
+  is computed downstream as the weighted sum. State this explicitly in your own
+  file — a model asked for both will produce a holistic score that does not
+  match its own dimensions.
+- Record your weights here as documentation of what the code applies:
 
-      score = round(0.30*d1 + 0.25*d2 + 0.15*d3 + 0.15*d4 + 0.15*d5)
+      <dimension 1>    0.30
+      <dimension 2>    0.25
+      <dimension 3>    0.15
+      <dimension 4>    0.15
+      <dimension 5>    0.15
 
-- A failed hard gate overrides everything: `score` 0, all dimensions 0, one entry
-  in `reasons` naming the gate.
-
-Keep the weights summing to 100.
+  Keep them summing to 1.00, and keep them in sync with DIMENSION_WEIGHTS in
+  src/skills/scorer.py — reweighting is a code change, not a markdown edit.
+- A failed hard gate overrides everything: every dimension is 0, and one entry
+  in `reasons` naming the gate. The computed score is then 0.
 
 ## 1. Hard gates — binary, evaluated first
 
@@ -107,10 +114,12 @@ protected-characteristic preference: flag it, do not gate on it.
 ## 6. Output
 
 Return only the JSON object, with your five dimension keys exactly as named in
-§3:
+§3 — no more and no fewer, since an unexpected or missing key is rejected and
+the posting is not scored:
 
     {
-      "score": integer 0-100, the weighted sum,
       "dimensions": { "key 1": integer 0-100, "key 2": integer 0-100 },
       "reasons": ["one per dimension", "FLAG: ..."]
     }
+
+Do not include a `score` key. It is computed from the dimensions.

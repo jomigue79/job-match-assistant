@@ -13,6 +13,21 @@ class ScorerError(Exception):
     """Raised when the LLM returns invalid, malformed, or out-of-spec scoring output."""
     pass
 
+# Weights applied to the five soft dimensions from data/knowledge/ats_criteria.md §3.
+# The model returns dimension values only; the score is computed here, because
+# asking an LLM for a weighted sum produced errors of up to 16 points in both
+# directions on run a7640ad9 (2026-09-08).
+DIMENSION_WEIGHTS = {
+    "Technical role content": 0.30,
+    "Requirements coverage": 0.25,
+    "AI literacy & development": 0.15,
+    "Seniority & scope": 0.15,
+    "Domain & context": 0.15,
+}
+
+assert abs(sum(DIMENSION_WEIGHTS.values()) - 1.0) < 1e-9, \
+    "DIMENSION_WEIGHTS must sum to 1.0"
+
 SYSTEM_PROMPT = """You are an expert recruitment analyst evaluating whether a job posting is a good fit for a specific candidate.
 Your task is to score the provided Job Posting against the candidate's CV using the specified evaluation criteria.
 
@@ -24,13 +39,12 @@ Adhere strictly to the following rules:
 
 JSON Schema:
 {
-  "score": <integer between 0 and 100>,
   "dimensions": {
-    "<dimension_name_1>": <numeric rating>,
+    "dimension_name": numeric rating 0-100,
     ...
   },
   "reasons": [
-    "<concise, evidence-grounded reason statement>",
+    "concise, evidence-grounded reason statement",
     ...
   ]
 }
@@ -100,26 +114,33 @@ class Scorer:
         except json.JSONDecodeError as e:
             raise ScorerError(f"Model output is not valid JSON: {e}") from e
 
-        # Validate score
-        if "score" not in data:
-            raise ScorerError("Model output missing 'score' field.")
-        score = data["score"]
-        if type(score) is not int or isinstance(score, bool):
-            raise ScorerError("Model output 'score' field must be an integer.")
-        if not (0 <= score <= 100):
-            raise ScorerError(f"Model output 'score' value ({score}) must be in range [0, 100].")
-
-        # Validate dimensions
+        # Validate dimensions: exactly the five expected keys, each numeric and in 0-100.
         if "dimensions" not in data:
             raise ScorerError("Model output missing 'dimensions' field.")
         dimensions = data["dimensions"]
         if not isinstance(dimensions, dict) or not dimensions:
             raise ScorerError("Model output 'dimensions' field must be a non-empty dictionary.")
+
+        expected = set(DIMENSION_WEIGHTS)
+        got = set(dimensions)
+        missing = expected - got
+        extra = got - expected
+        if missing:
+            raise ScorerError(
+                f"Model output 'dimensions' is missing expected key(s): {sorted(missing)}."
+            )
+        if extra:
+            raise ScorerError(
+                f"Model output 'dimensions' has unexpected key(s): {sorted(extra)}."
+            )
+
         for k, v in dimensions.items():
-            if not isinstance(k, str):
-                raise ScorerError("Model output 'dimensions' keys must be strings.")
             if not isinstance(v, (int, float)) or isinstance(v, bool):
                 raise ScorerError(f"Model output 'dimensions' value for key '{k}' must be numeric.")
+            if not (0 <= v <= 100):
+                raise ScorerError(
+                    f"Model output 'dimensions' value for key '{k}' ({v}) must be in range [0, 100]."
+                )
 
         # Validate reasons
         if "reasons" not in data:
@@ -130,6 +151,9 @@ class Scorer:
         for item in reasons:
             if not isinstance(item, str) or not item.strip():
                 raise ScorerError("Model output 'reasons' elements must be non-empty strings.")
+
+        # Score is computed here, not returned by the model. See DIMENSION_WEIGHTS.
+        score = round(sum(DIMENSION_WEIGHTS[k] * dimensions[k] for k in DIMENSION_WEIGHTS))
 
         # Log metadata only
         logger.info(

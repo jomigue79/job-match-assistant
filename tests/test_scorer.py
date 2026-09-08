@@ -1,3 +1,4 @@
+import json
 import pytest
 from datetime import datetime, timezone
 
@@ -6,6 +7,22 @@ from knowledge import KnowledgeBase
 from llm import LLMRequest, LLMResponse, LLMUsage
 from observability import CostAccumulator
 from skills.scorer import Scorer, ScorerError
+
+# The five dimension keys Scorer requires, with values chosen once so tests that
+# are really about something else (fences, reasons, prompt shape, cost) can reach
+# their assertion instead of tripping the dimension-key check.
+#
+# Weighted sum: 0.30*60 + 0.25*40 + 0.15*20 + 0.15*50 + 0.15*80
+#             =   18.0 +   10.0 +    3.0 +    7.5 +   12.0 = 50.5
+# round(50.5) is 50, not 51 -- Python rounds halves to even.
+VALID_DIMENSIONS = {
+    "Technical role content": 60,
+    "Requirements coverage": 40,
+    "AI literacy & development": 20,
+    "Seniority & scope": 50,
+    "Domain & context": 80,
+}
+VALID_DIMENSIONS_SCORE = 50
 
 class FakeLLMClient:
     def __init__(self, response_text: str, input_tokens: int = 10, output_tokens: int = 20):
@@ -47,34 +64,39 @@ def make_knowledge_base():
 
 @pytest.mark.asyncio
 async def test_valid_response():
-    valid_json = '{"score": 85, "dimensions": {"Python": 9.0, "Testing": 8.0}, "reasons": ["Has solid Python skills", "Good testing experience"]}'
+    valid_json = json.dumps({
+        "dimensions": VALID_DIMENSIONS,
+        "reasons": ["Has solid Python skills", "Good testing experience"],
+    })
     fake_client = FakeLLMClient(valid_json)
     scorer = Scorer(fake_client)
-    
+
     job = make_job_posting()
     kb = make_knowledge_base()
-    
+
     res = await scorer.score(job, kb)
-    
+
     assert res.identity_hash == job.identity_hash
-    assert res.score == 85
-    assert res.dimension_breakdown == {"Python": 9.0, "Testing": 8.0}
+    # The model returned no score; Scorer computed this from the dimensions.
+    assert res.score == VALID_DIMENSIONS_SCORE
+    assert res.dimension_breakdown == {k: float(v) for k, v in VALID_DIMENSIONS.items()}
     assert res.match_reasons == ["Has solid Python skills", "Good testing experience"]
     assert res.scored_at is not None
     assert res.scored_at.tzinfo == timezone.utc
 
 @pytest.mark.asyncio
 async def test_markdown_fenced_json():
-    fenced_json = '```json\n{"score": 90, "dimensions": {"Coding": 95}, "reasons": ["Excellent coder"]}\n```'
+    inner = json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": ["Excellent coder"]})
+    fenced_json = f'```json\n{inner}\n```'
     fake_client = FakeLLMClient(fenced_json)
     scorer = Scorer(fake_client)
-    
+
     job = make_job_posting()
     kb = make_knowledge_base()
-    
+
     res = await scorer.score(job, kb)
-    assert res.score == 90
-    assert res.dimension_breakdown == {"Coding": 95.0}
+    assert res.score == VALID_DIMENSIONS_SCORE
+    assert res.dimension_breakdown == {k: float(v) for k, v in VALID_DIMENSIONS.items()}
 
 @pytest.mark.asyncio
 async def test_malformed_non_json():
@@ -83,46 +105,6 @@ async def test_malformed_non_json():
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
     assert "not valid JSON" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_malformed_missing_score():
-    fake_client = FakeLLMClient('{"dimensions": {"X": 1}, "reasons": ["Y"]}')
-    scorer = Scorer(fake_client)
-    with pytest.raises(ScorerError) as exc_info:
-        await scorer.score(make_job_posting(), make_knowledge_base())
-    assert "missing 'score'" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_malformed_invalid_score_type():
-    fake_client = FakeLLMClient('{"score": "eighty", "dimensions": {"X": 1}, "reasons": ["Y"]}')
-    scorer = Scorer(fake_client)
-    with pytest.raises(ScorerError) as exc_info:
-        await scorer.score(make_job_posting(), make_knowledge_base())
-    assert "score' field must be an integer" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_malformed_boolean_score():
-    fake_client = FakeLLMClient('{"score": true, "dimensions": {"X": 1}, "reasons": ["Y"]}')
-    scorer = Scorer(fake_client)
-    with pytest.raises(ScorerError) as exc_info:
-        await scorer.score(make_job_posting(), make_knowledge_base())
-    assert "score' field must be an integer" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_malformed_score_out_of_bounds_high():
-    fake_client = FakeLLMClient('{"score": 101, "dimensions": {"X": 1}, "reasons": ["Y"]}')
-    scorer = Scorer(fake_client)
-    with pytest.raises(ScorerError) as exc_info:
-        await scorer.score(make_job_posting(), make_knowledge_base())
-    assert "must be in range" in str(exc_info.value)
-
-@pytest.mark.asyncio
-async def test_malformed_score_out_of_bounds_low():
-    fake_client = FakeLLMClient('{"score": -1, "dimensions": {"X": 1}, "reasons": ["Y"]}')
-    scorer = Scorer(fake_client)
-    with pytest.raises(ScorerError) as exc_info:
-        await scorer.score(make_job_posting(), make_knowledge_base())
-    assert "must be in range" in str(exc_info.value)
 
 @pytest.mark.asyncio
 async def test_malformed_missing_dimensions():
@@ -142,7 +124,10 @@ async def test_malformed_empty_dimensions():
 
 @pytest.mark.asyncio
 async def test_malformed_dimensions_non_numeric():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": "invalid"}, "reasons": ["Y"]}')
+    # Correct key set, one bad value -- otherwise the key check fires first.
+    dims = dict(VALID_DIMENSIONS)
+    dims["Domain & context"] = "invalid"
+    fake_client = FakeLLMClient(json.dumps({"dimensions": dims, "reasons": ["Y"]}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -150,7 +135,9 @@ async def test_malformed_dimensions_non_numeric():
 
 @pytest.mark.asyncio
 async def test_malformed_dimensions_boolean():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": true}, "reasons": ["Y"]}')
+    dims = dict(VALID_DIMENSIONS)
+    dims["Domain & context"] = True
+    fake_client = FakeLLMClient(json.dumps({"dimensions": dims, "reasons": ["Y"]}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -158,7 +145,7 @@ async def test_malformed_dimensions_boolean():
 
 @pytest.mark.asyncio
 async def test_malformed_missing_reasons():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": 1}}')
+    fake_client = FakeLLMClient(json.dumps({"dimensions": VALID_DIMENSIONS}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -166,7 +153,7 @@ async def test_malformed_missing_reasons():
 
 @pytest.mark.asyncio
 async def test_malformed_empty_reasons():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": 1}, "reasons": []}')
+    fake_client = FakeLLMClient(json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": []}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -174,7 +161,7 @@ async def test_malformed_empty_reasons():
 
 @pytest.mark.asyncio
 async def test_malformed_reasons_non_string():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": 1}, "reasons": [123]}')
+    fake_client = FakeLLMClient(json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": [123]}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -182,7 +169,7 @@ async def test_malformed_reasons_non_string():
 
 @pytest.mark.asyncio
 async def test_malformed_reasons_empty_string():
-    fake_client = FakeLLMClient('{"score": 80, "dimensions": {"X": 1}, "reasons": ["   "]}')
+    fake_client = FakeLLMClient(json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": ["   "]}))
     scorer = Scorer(fake_client)
     with pytest.raises(ScorerError) as exc_info:
         await scorer.score(make_job_posting(), make_knowledge_base())
@@ -190,46 +177,46 @@ async def test_malformed_reasons_empty_string():
 
 @pytest.mark.asyncio
 async def test_prompt_content_and_request_shape():
-    valid_json = '{"score": 90, "dimensions": {"X": 1}, "reasons": ["Y"]}'
+    valid_json = json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": ["Y"]})
     fake_client = FakeLLMClient(valid_json)
     scorer = Scorer(fake_client)
-    
+
     job = make_job_posting()
     kb = make_knowledge_base()
-    
+
     await scorer.score(job, kb)
-    
+
     req = fake_client.last_request
     assert req is not None
-    
+
     assert kb.cv in req.user_prompt
     assert kb.ats_criteria in req.user_prompt
-    
+
     assert kb.persona not in req.user_prompt
     assert kb.persona not in req.system_prompt
-    
+
     assert req.temperature == 0.0
     assert req.json_mode is True
     assert req.max_tokens == 1000
 
 @pytest.mark.asyncio
 async def test_cost_accumulator_forwarding():
-    valid_json = '{"score": 90, "dimensions": {"X": 1}, "reasons": ["Y"]}'
+    valid_json = json.dumps({"dimensions": VALID_DIMENSIONS, "reasons": ["Y"]})
     fake_client = FakeLLMClient(valid_json, input_tokens=15, output_tokens=25)
     scorer = Scorer(fake_client)
-    
+
     cost_acc = CostAccumulator(
         llm_input_token_rate_usd=0.01,
         llm_output_token_rate_usd=0.02
     )
-    
+
     job = make_job_posting()
     kb = make_knowledge_base()
-    
+
     await scorer.score(job, kb, cost_accumulator=cost_acc)
-    
+
     assert fake_client.last_cost_accumulator is cost_acc
-    
+
     summary = cost_acc.summary()
     assert summary.total_input_tokens == 15
     assert summary.total_output_tokens == 25
