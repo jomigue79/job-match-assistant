@@ -1,10 +1,10 @@
 import asyncio
 import contextlib
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import uuid
 
-from domain import Run, RunStatus, RunCost, JobStatus, JobPosting
+from domain import Run, RunStatus, RunCost, JobStatus, JobPosting, MatchResult
 from ingestion import IngestionService, Normalizer, DedupService, ScrapeQuery, PartialFetchError
 from persistence import PersistenceService, GoogleSheetLedger
 from observability import get_logger, bind_run, CostAccumulator
@@ -227,6 +227,27 @@ class RunCoordinator:
                 )
                 await self.persistence_service.save_run(run)
 
+    async def _score_and_transition(
+        self,
+        job: JobPosting,
+        knowledge,
+        cost_accumulator: Optional[CostAccumulator],
+        respect_threshold: bool = True
+    ) -> Tuple[MatchResult, JobStatus]:
+        """
+        Scores a job, saves its MatchResult, and transitions its status.
+        Shared by run scoring and score_one; raises on any failure.
+        Below the threshold a job goes to no_match only when respect_threshold is True.
+        """
+        match = await self.scorer.score(job, knowledge, cost_accumulator)
+        if respect_threshold and match.score < self.score_threshold:
+            new_status = JobStatus.NO_MATCH
+        else:
+            new_status = JobStatus.MATCHED
+        await self.persistence_service.save_match_result(match)
+        await self.persistence_service.set_status(job.identity_hash, new_status)
+        return match, new_status
+
     async def _score_and_persist(
         self,
         job: JobPosting,
@@ -239,10 +260,11 @@ class RunCoordinator:
             logger.info("Skipping scoring for already actioned job", identity_hash=job.identity_hash, status=job.status)
             return
         try:
-            match = await self.scorer.score(job, knowledge, cost_accumulator)
-            new_status = JobStatus.MATCHED if match.score >= self.score_threshold else JobStatus.NO_MATCH
-            await self.persistence_service.save_match_result(match)
-            await self.persistence_service.set_status(job.identity_hash, new_status)
+            # The threshold exemption follows the job, not the code path: a manual job
+            # whose scoring failed on submit is still 'scraped' here, and no_match is terminal.
+            match, new_status = await self._score_and_transition(
+                job, knowledge, cost_accumulator, respect_threshold=(job.source != "manual")
+            )
             if new_status == JobStatus.MATCHED:
                 run.n_matched += 1
             else:
@@ -259,6 +281,63 @@ class RunCoordinator:
             )
             run.n_errors += 1
             await self.persistence_service.save_run(run)
+
+    async def score_one(self, identity_hash: str, respect_threshold: bool = True) -> MatchResult:
+        """
+        Scores a single job outside a run: no Run row, no run counters. Raises on failure.
+
+        A job not in 'scraped' returns its stored MatchResult with no LLM call and no
+        transition. Every other status rejects a transition to matched, and re-scoring
+        would overwrite the score an existing letter or application was based on.
+
+        Refused while a run is active: the run's scoring phase could score the same job,
+        and the second scraped -> matched transition would raise and fail the run.
+        """
+        if self.scorer is None or self.knowledge_loader is None:
+            raise RuntimeError("score_one() requires a scorer and a knowledge loader.")
+
+        active = self.get_active_run()
+        if active is not None and active.status == RunStatus.RUNNING:
+            raise RunAlreadyActiveError("Cannot score a job while a pipeline run is active.")
+
+        job = await self.persistence_service.get_job(identity_hash)
+        if job is None:
+            raise ValueError(f"Job with hash {identity_hash} does not exist.")
+
+        if job.status != JobStatus.SCRAPED:
+            stored = await self.persistence_service.get_match_result(identity_hash)
+            if stored is None:
+                raise ValueError(
+                    f"Job is already '{job.status.value}' and has no stored score to return."
+                )
+            logger.info(
+                "Job already past scraped; returning stored score without re-scoring",
+                identity_hash=identity_hash,
+                status=job.status.value,
+                score=stored.score
+            )
+            return stored
+
+        knowledge = self.knowledge_loader.load()
+        # No run to attribute the cost to; this accumulator exists only for the log line.
+        cost_accum = CostAccumulator()
+        match, new_status = await self._score_and_transition(
+            job, knowledge, cost_accum, respect_threshold=respect_threshold
+        )
+        summary = cost_accum.summary()
+        logger.info(
+            "Scored single job outside a run",
+            identity_hash=identity_hash,
+            source=job.source,
+            score=match.score,
+            status=new_status.value,
+            respect_threshold=respect_threshold,
+            input_tokens=summary.total_input_tokens,
+            output_tokens=summary.total_output_tokens,
+            estimated_cost_usd=summary.estimated_cost_usd,
+            note="Not attributed to any run; this log line is the only record of the cost"
+        )
+        return match
 
     def get_active_run(self) -> Optional[Run]:
         """
