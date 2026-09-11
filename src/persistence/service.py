@@ -415,6 +415,67 @@ class PersistenceService:
 
         return await asyncio.to_thread(_execute)
 
+    async def update_cover_letter(
+        self,
+        identity_hash: str,
+        text: str,
+        expected_version: Optional[int] = None
+    ) -> CoverLetter:
+        """
+        Overwrites the text of the job's current (highest) letter version in place.
+
+        An edit, not a regeneration: version and created_at are unchanged, so v2 still
+        means the LLM wrote the letter again, and the Applied tab's ordering holds.
+        Destructive: the previous text is not kept.
+
+        Raises ValueError if the job has no letter, if expected_version is given and is
+        no longer the current version (the letter was regenerated after the edit began),
+        or if the row disappeared before the UPDATE landed.
+        """
+        def _execute():
+            conn = connect(self.db_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT version, created_at FROM cover_letters WHERE identity_hash = ? ORDER BY version DESC LIMIT 1;",
+                    (identity_hash,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError(f"No cover letter exists for job {identity_hash}.")
+                version, created_at_str = row
+
+                if expected_version is not None and version != expected_version:
+                    raise ValueError(
+                        f"The letter was regenerated (now v{version}) after this edit began "
+                        f"on v{expected_version}; nothing was updated."
+                    )
+
+                cursor.execute(
+                    "UPDATE cover_letters SET text = ? WHERE identity_hash = ? AND version = ?;",
+                    (text, identity_hash, version)
+                )
+                # _write_lock serializes this app's writes, not other connections. A row
+                # deleted outside the app between the SELECT and the UPDATE matches nothing.
+                if cursor.rowcount != 1:
+                    conn.rollback()
+                    raise ValueError(
+                        f"Cover letter v{version} for job {identity_hash} no longer exists; nothing was updated."
+                    )
+                conn.commit()
+
+                return CoverLetter(
+                    identity_hash=identity_hash,
+                    text=text,
+                    version=version,
+                    created_at=parse_dt(created_at_str)
+                )
+            finally:
+                conn.close()
+
+        async with self._write_lock:
+            return await asyncio.to_thread(_execute)
+
     # --- Counters & Breakdown ---
 
     async def status_breakdown(self) -> Dict[JobStatus, int]:
