@@ -47,7 +47,7 @@ Then edit `.env`. These are the keys you must set:
 | `LLM_PROVIDER` | `openai` or `google`. | — |
 | `LLM_MODEL` | Model name for that provider. | — |
 | `LLM_API_KEY` | Key for whichever provider you chose. | OpenAI platform, or Google AI Studio. |
-| `SCRAPER_QUERY` | Job title to search for. | — |
+| `SCRAPER_QUERY` | Job titles to search for, comma-separated — up to `SCRAPER_MAX_QUERIES` (default 5). Each title is a separate Apify Actor Start. | — |
 | `SCRAPER_LOCATION` | Where. | — |
 | `SCRAPER_LIMIT` | Results per run. Start small. | — |
 | `SCORE_THRESHOLD` | Score at or above which a job counts as a match. | See Known gaps — the default of 70 may be high. |
@@ -165,12 +165,18 @@ Two meters run at once.
 **Apify** bills per Actor Start plus per result. A run returning about 39 results
 cost roughly **$0.15**.
 
-**The LLM** bills per token. The same run cost about **$0.12** — roughly 4,900
-input tokens per job, because every posting is scored against the whole CV and
-the whole criteria file.
+**The LLM** bills per token — roughly 4,900 input tokens per job, because every
+posting is scored against the whole CV and the whole criteria file. On Gemini 2.5
+Flash at its paid-tier list price ($0.30 per million input tokens, $2.50 per
+million output, September 2026) that is about **$0.002–0.003 per job**, and the
+same run cost about **$0.01**.
 
 Each run's estimated cost is recorded in the `runs` table and shown in the app.
-The Apify component currently reports as zero; only LLM tokens are counted.
+**It is only as accurate as `LLM_INPUT_TOKEN_RATE_USD` and
+`LLM_OUTPUT_TOKEN_RATE_USD`.** They default to GPT-4o prices and must be set to
+your provider's rates, or the recorded cost is meaningless. Runs recorded with the
+GPT-4o defaults against Gemini 2.5 Flash overstate the LLM cost about twelve
+times. The Apify component currently reports as zero; only LLM tokens are counted.
 
 **The free Apify plan will not carry you far.** It blocks the Actor after a small
 number of runs, and the failure is silent: the run completes successfully and

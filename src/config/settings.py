@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from pydantic import Field, SecretStr, field_validator, ValidationError
+from pydantic import Field, SecretStr, field_validator, ValidationError, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ConfigurationError(ValueError):
@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     
     # Source / Scraper Configuration
     scraper_source: str = Field(..., validation_alias="SCRAPER_SOURCE")
+    # Declared before scraper_query: its validator reads this value from info.data.
+    scraper_max_queries: int = Field(default=5, validation_alias="SCRAPER_MAX_QUERIES")
+    # Comma-separated job titles; each title is a separate Apify Actor Start.
     scraper_query: str = Field(default="Software Engineer", validation_alias="SCRAPER_QUERY")
     scraper_location: str = Field(default="Remote", validation_alias="SCRAPER_LOCATION")
     scraper_limit: int = Field(default=20, validation_alias="SCRAPER_LIMIT")
@@ -50,7 +53,18 @@ class Settings(BaseSettings):
     llm_input_token_rate_usd: float = Field(default=5.00 / 1_000_000, validation_alias="LLM_INPUT_TOKEN_RATE_USD")
     llm_output_token_rate_usd: float = Field(default=15.00 / 1_000_000, validation_alias="LLM_OUTPUT_TOKEN_RATE_USD")
     apify_cu_rate_usd: float = Field(default=0.25, validation_alias="APIFY_CU_RATE_USD")
-    
+
+    # Pre-run Apify cost projection: one Actor Start per query plus its expected results.
+    apify_actor_start_usd: float = Field(default=0.01, validation_alias="APIFY_ACTOR_START_USD")
+    apify_result_usd: float = Field(default=0.003, validation_alias="APIFY_RESULT_USD")
+    # Records returned per unit of SCRAPER_LIMIT. The actor applies the limit per platform,
+    # so a query returns more records than its limit. Calibrated from nine envelopes (2026-09,
+    # all at limit 10, 35-45 records per query: 3.5-4.5); the default is the observed maximum
+    # so the projection does not under-report. Actor-specific, adjust if projections drift.
+    scraper_results_per_limit: float = Field(default=4.5, validation_alias="SCRAPER_RESULTS_PER_LIMIT")
+    # A run whose projected Apify cost exceeds this is refused and recorded as failed.
+    run_budget_cap_usd: float = Field(default=2.00, validation_alias="RUN_BUDGET_CAP_USD")
+
     # Runtime Config
     llm_concurrency: int = Field(default=5, validation_alias="LLM_CONCURRENCY")
     sqlite_busy_timeout_ms: int = Field(default=5000, validation_alias="SQLITE_BUSY_TIMEOUT_MS")
@@ -80,6 +94,42 @@ class Settings(BaseSettings):
         if v.upper() not in valid_levels:
             raise ValueError(f"log_level must be one of {sorted(valid_levels)}")
         return v.upper()
+
+    @field_validator("scraper_max_queries")
+    @classmethod
+    def validate_scraper_max_queries(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("scraper_max_queries must be at least 1")
+        return v
+
+    @field_validator("scraper_query")
+    @classmethod
+    def validate_scraper_query(cls, v: str, info: ValidationInfo) -> str:
+        titles = [t.strip() for t in v.split(",") if t.strip()]
+        if not titles:
+            raise ValueError("SCRAPER_QUERY must name at least one job title")
+        folded = [t.casefold() for t in titles]
+        if len(set(folded)) != len(folded):
+            raise ValueError("SCRAPER_QUERY lists the same job title more than once")
+        # Absent when SCRAPER_MAX_QUERIES itself failed validation; that error is reported on its own.
+        max_queries = info.data.get("scraper_max_queries")
+        if max_queries is not None and len(titles) > max_queries:
+            raise ValueError(
+                f"SCRAPER_QUERY lists {len(titles)} job titles; SCRAPER_MAX_QUERIES allows {max_queries}"
+            )
+        return ",".join(titles)
+
+    @field_validator("run_budget_cap_usd")
+    @classmethod
+    def validate_run_budget_cap_usd(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("run_budget_cap_usd must not be negative")
+        return v
+
+    @property
+    def scraper_queries(self) -> list[str]:
+        """SCRAPER_QUERY as a list of job titles, already stripped and validated."""
+        return self.scraper_query.split(",")
 
 @lru_cache()
 def get_settings(_env_file: str | None = ".env") -> Settings:

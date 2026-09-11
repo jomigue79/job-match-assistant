@@ -1,11 +1,11 @@
 import asyncio
 import contextlib
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 import uuid
 
 from domain import Run, RunStatus, RunCost, JobStatus, JobPosting
-from ingestion import IngestionService, Normalizer, DedupService, ScrapeQuery
+from ingestion import IngestionService, Normalizer, DedupService, ScrapeQuery, PartialFetchError
 from persistence import PersistenceService, GoogleSheetLedger
 from observability import get_logger, bind_run, CostAccumulator
 from config import get_settings
@@ -18,6 +18,14 @@ logger = get_logger("run_coordinator")
 class RunAlreadyActiveError(Exception):
     """Raised when trying to start a scraper run while one is already running."""
     pass
+
+def project_apify_cost(queries, actor_start_usd, result_usd, results_per_limit) -> float:
+    """
+    Projects a run's Apify spend before any Actor Start: one start per query plus
+    limit * results_per_limit records each, since the actor applies the limit per
+    platform. LLM cost is not included; it depends on how many postings are new.
+    """
+    return sum(actor_start_usd + q.limit * results_per_limit * result_usd for q in queries)
 
 class RunCoordinator:
     """
@@ -44,6 +52,11 @@ class RunCoordinator:
         self.knowledge_loader = knowledge_loader
         self.score_threshold = score_threshold if score_threshold is not None else settings.score_threshold
         self.source_name = source_name if source_name is not None else settings.scraper_source
+        self.run_budget_cap_usd = settings.run_budget_cap_usd
+        self.apify_actor_start_usd = settings.apify_actor_start_usd
+        self.apify_result_usd = settings.apify_result_usd
+        self.scraper_results_per_limit = settings.scraper_results_per_limit
+        self.replay_from_cache = settings.replay_from_cache
         self.ledger_sync = GoogleSheetLedger(
             service_account_path=settings.google_service_account_path,
             sheet_id=settings.ledger_sheet_id or "",
@@ -54,21 +67,30 @@ class RunCoordinator:
         self._active_run: Optional[Run] = None
         self._active_task: Optional[asyncio.Task] = None
 
-    def start_run(self, query: Optional[ScrapeQuery] = None) -> Run:
+    def start_run(self, queries: Optional[List[ScrapeQuery]] = None) -> Run:
         """
         Starts a run in the background if none is currently running.
+        Without explicit queries, builds one per SCRAPER_QUERY title.
         Returns the constructed Run object immediately.
         """
-        if query is None:
+        if queries is None:
             settings = get_settings()
-            query = ScrapeQuery(
-                terms=settings.scraper_query,
-                location=settings.scraper_location,
-                limit=settings.scraper_limit,
-                country=settings.scraper_country or "Portugal",
-                posted_since=settings.scraper_posted_since
-            )
-            
+            queries = [
+                ScrapeQuery(
+                    terms=title,
+                    location=settings.scraper_location,
+                    limit=settings.scraper_limit,
+                    country=settings.scraper_country or "Portugal",
+                    posted_since=settings.scraper_posted_since
+                )
+                for title in settings.scraper_queries
+            ]
+
+        # Reject before the active-run guard and before any Run exists, so a bad
+        # argument cannot leave a phantom RUNNING run behind.
+        if not queries:
+            raise ValueError("start_run() requires at least one ScrapeQuery.")
+
         # Synchronous check-and-set lock BEFORE any await
         if self._active_run is not None and self._active_run.status == RunStatus.RUNNING:
             raise RunAlreadyActiveError("A run is already active.")
@@ -90,11 +112,11 @@ class RunCoordinator:
             started_at=datetime.now(timezone.utc)
         )
         self._active_run = run
-        self._active_task = loop.create_task(self._execute_run(run, query))
+        self._active_task = loop.create_task(self._execute_run(run, queries))
 
         return run
 
-    async def _execute_run(self, run: Run, query: ScrapeQuery) -> None:
+    async def _execute_run(self, run: Run, queries: List[ScrapeQuery]) -> None:
         """
         Background coroutine executing the fetch-normalize-dedup-persist-score pipeline.
         """
@@ -103,9 +125,46 @@ class RunCoordinator:
             try:
                 # 1. Persist run as running
                 await self.persistence_service.save_run(run)
-                
-                # 2. Fetch raw records (live or replay)
-                records = await self.ingestion_service.fetch(query)
+
+                # Budget check before any Actor Start. Replay makes none, so it projects zero.
+                # A refusal returns through the finally below, which records the run as failed.
+                if self.replay_from_cache:
+                    projected_usd = 0.0
+                else:
+                    projected_usd = project_apify_cost(
+                        queries,
+                        self.apify_actor_start_usd,
+                        self.apify_result_usd,
+                        self.scraper_results_per_limit
+                    )
+                logger.info(
+                    "Projected Apify cost for run",
+                    run_id=run.run_id,
+                    n_queries=len(queries),
+                    terms=[q.terms for q in queries],
+                    projected_usd=round(projected_usd, 4),
+                    cap_usd=self.run_budget_cap_usd,
+                    replay=self.replay_from_cache,
+                    note="Apify only; LLM cost depends on how many postings are new after dedup"
+                )
+                if projected_usd > self.run_budget_cap_usd:
+                    logger.error(
+                        "Run refused: projected Apify cost exceeds RUN_BUDGET_CAP_USD",
+                        run_id=run.run_id,
+                        projected_usd=round(projected_usd, 4),
+                        cap_usd=self.run_budget_cap_usd
+                    )
+                    run.n_errors += 1
+                    run.status = RunStatus.FAILED
+                    return
+
+                # 2. Fetch raw records for every query, pooled (live or replay)
+                try:
+                    records = await self.ingestion_service.fetch(queries)
+                except PartialFetchError as e:
+                    # Some queries failed; continue with what the others returned
+                    run.n_errors += len(e.failures)
+                    records = e.records
                 run.n_scraped = len(records)
                 cost_accum.add_apify_usage(compute_units=0.0, results=len(records))
                 

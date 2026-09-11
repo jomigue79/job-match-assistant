@@ -33,7 +33,8 @@ This document provides a detailed reference for all configuration options suppor
 
 | Env Key | Default Value | Description |
 | :--- | :--- | :--- |
-| `SCRAPER_QUERY` | `Software Engineer` | Job keyword terms to search. |
+| `SCRAPER_QUERY` | `Software Engineer` | Comma-separated job titles to search. One Apify Actor Start per title. Duplicate titles (case-insensitive) are rejected at startup. |
+| `SCRAPER_MAX_QUERIES` | `5` | Maximum titles allowed in `SCRAPER_QUERY` (`value >= 1`). More is a startup configuration error, never silently truncated. |
 | `SCRAPER_LOCATION` | `Remote` | Geographical or format locator filter. |
 | `SCRAPER_LIMIT` | `20` | Maximum number of records to retrieve per query session. |
 | `SCRAPER_COUNTRY` | *None* | Country filter passed through to the Apify actor. Actor-specific. |
@@ -59,9 +60,13 @@ This document provides a detailed reference for all configuration options suppor
 
 | Env Key | Default Value | Description |
 | :--- | :--- | :--- |
-| `LLM_INPUT_TOKEN_RATE_USD` | `0.000005` | USD rate per LLM input token ($5.00 / 1M). |
-| `LLM_OUTPUT_TOKEN_RATE_USD`| `0.000015` | USD rate per LLM output token ($15.00 / 1M). |
+| `LLM_INPUT_TOKEN_RATE_USD` | `0.000005` | USD per LLM input token. **The default is GPT-4o pricing ($5.00 / 1M). It MUST be set to match `LLM_PROVIDER` and `LLM_MODEL`, or `cost_estimated_usd` is meaningless.** Gemini 2.5 Flash paid tier: `0.0000003` ($0.30 / 1M, September 2026). |
+| `LLM_OUTPUT_TOKEN_RATE_USD`| `0.000015` | USD per LLM output token. **The default is GPT-4o pricing ($15.00 / 1M). It MUST be set to match `LLM_PROVIDER` and `LLM_MODEL`, or `cost_estimated_usd` is meaningless.** Gemini 2.5 Flash paid tier: `0.0000025` ($2.50 / 1M including thinking tokens, September 2026). |
 | `APIFY_CU_RATE_USD` | `0.25` | USD rate per Apify compute unit. |
+| `APIFY_ACTOR_START_USD` | `0.01` | USD per Apify Actor Start. A run makes one per `SCRAPER_QUERY` title. Used by the pre-run projection. |
+| `APIFY_RESULT_USD` | `0.003` | USD per Apify result record. Used by the pre-run projection. |
+| `SCRAPER_RESULTS_PER_LIMIT` | `4.5` | Records the actor returns per unit of `SCRAPER_LIMIT`. The actor applies the limit per platform, so a query returns more records than its limit. Calibrated from nine envelopes (2026-09, all at limit 10, 35-45 records per query, a multiplier of 3.5-4.5); the default is the observed maximum so the projection does not under-report. Actor-specific, adjust if projections drift from actual spend. |
+| `RUN_BUDGET_CAP_USD` | `2.00` | Before any Actor Start, the run's Apify cost is projected as the sum over queries of `APIFY_ACTOR_START_USD + SCRAPER_LIMIT × SCRAPER_RESULTS_PER_LIMIT × APIFY_RESULT_USD`. Above this cap (`value >= 0`) the run is refused and recorded as failed. Replay projects zero. LLM cost is not projected. |
 
 ### Runtime & Web Server
 

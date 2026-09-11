@@ -1,5 +1,5 @@
 from typing import Optional
-from .types import RawRecord, ScrapeQuery, ScraperError, CacheEntry, CacheError
+from .types import RawRecord, ScrapeQuery, ScraperError, CacheEntry, CacheError, PartialFetchError
 from .scraper_client import ScraperClient
 from .apify_client import ApifyScraperClient
 from .cache import RawScrapeCache
@@ -54,6 +54,7 @@ __all__ = [
     "RawRecord",
     "ScrapeQuery",
     "ScraperError",
+    "PartialFetchError",
     "CacheEntry",
     "CacheError",
     "ScraperClient",

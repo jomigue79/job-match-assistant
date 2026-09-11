@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Sequence, Union
 from .types import CacheEntry, CacheError, RawRecord, ScrapeQuery
 
 def parse_dt(dt_str: Optional[str]) -> Optional[datetime]:
@@ -21,28 +21,41 @@ class RawScrapeCache:
     def __init__(self, cache_dir: str):
         self.cache_dir = Path(cache_dir)
 
-    def write(self, records: List[RawRecord], source: str, query: ScrapeQuery) -> Path:
+    def write(
+        self,
+        records: List[RawRecord],
+        source: str,
+        queries: Union[ScrapeQuery, Sequence[ScrapeQuery]]
+    ) -> Path:
         """
         Dumps the list of raw record dictionaries inside a JSON envelope.
+        `queries` names every query whose records the envelope holds; a single
+        query is accepted as a list of one.
         Returns the Path of the saved file.
         """
+        query_list = [queries] if isinstance(queries, ScrapeQuery) else list(queries)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Format filename using source and utc timestamp to guarantee sorting ordering
         timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
         file_path = self.cache_dir / f"scrape_{source}_{timestamp_str}.json"
-        
-        envelope = {
-            "source": source,
-            "query": {
-                "terms": query.terms,
-                "location": query.location,
-                "limit": query.limit
-            },
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "count": len(records),
-            "records": records
-        }
+
+        query_entries = [
+            {
+                "terms": q.terms,
+                "location": q.location,
+                "limit": q.limit
+            }
+            for q in query_list
+        ]
+        envelope = {"source": source}
+        # A single-query envelope keeps the pre-multi-query `query` object for compatibility.
+        if len(query_entries) == 1:
+            envelope["query"] = query_entries[0]
+        envelope["queries"] = query_entries
+        envelope["fetched_at"] = datetime.now(timezone.utc).isoformat()
+        envelope["count"] = len(records)
+        envelope["records"] = records
         
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(envelope, f, ensure_ascii=False, indent=2)
