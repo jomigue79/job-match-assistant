@@ -7,6 +7,10 @@ class ReplayScraperClient:
     Drop-in ScraperClient replaying raw scraper payloads from RawScrapeCache.
     Acts as an Apify-independent simulation engine.
     """
+    # Replay ignores the query and returns the whole cached run, so a multi-query
+    # fetch must call this client once rather than once per query.
+    replays_whole_run = True
+
     def __init__(self, cache: RawScrapeCache, source: str, replay_path: Optional[str] = None):
         self.cache = cache
         self.source = source
