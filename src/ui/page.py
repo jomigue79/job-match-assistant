@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Any
 from nicegui import ui
 
-from domain import Run, RunStatus, JobPosting, JobStatus, display_location
+from domain import Run, RunStatus, JobPosting, JobStatus, display_location, normalize_field
 from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
 
@@ -256,6 +256,90 @@ async def generate_cover_letter_handler(
             except RuntimeError as re:
                 logger.warning("on_success_callback raised RuntimeError (e.g. parent element deleted)", error=str(re))
 
+class ManualEntryValidationError(ValueError):
+    """Raised when a manually-entered job is missing a required field."""
+    pass
+
+class ManualEntryScoringError(Exception):
+    """Raised when a manually-entered job was saved but could not be scored."""
+    pass
+
+@dataclass(frozen=True)
+class ManualEntryResult:
+    identity_hash: str
+    company: str
+    title: str
+    score: int
+    status: JobStatus
+    rescored: bool
+
+async def add_manual_job_handler(
+    company: Optional[str],
+    title: Optional[str],
+    location: Optional[str],
+    url: Optional[str],
+    description: Optional[str],
+    persistence,
+    coordinator
+) -> ManualEntryResult:
+    """
+    Adds a job found outside the scraper and scores it immediately.
+
+    Validates and checks for an active run before writing anything. Scores with
+    respect_threshold=False: the user chose this job, so it lands in matched
+    whatever the score. A job already past 'scraped' is not re-scored; its stored
+    score is returned. Re-pasting an existing job overwrites its source, url,
+    description and scraped_at through upsert_job, which is intended.
+    """
+    def clean(value: Optional[str]) -> str:
+        return (value or "").strip()
+
+    company, title = clean(company), clean(title)
+    location, url, description = clean(location), clean(url), clean(description)
+
+    # identity_hash is built from the normalized fields; a value that normalizes to ""
+    # (blank or punctuation only) would collide with every other such job.
+    if not normalize_field(company):
+        raise ManualEntryValidationError("Company is required.")
+    if not normalize_field(title):
+        raise ManualEntryValidationError("Title is required.")
+
+    active = coordinator.get_active_run()
+    if active is not None and active.status == RunStatus.RUNNING:
+        raise RunAlreadyActiveError("A pipeline run is active. Add the job once it finishes.")
+
+    job = JobPosting(
+        company=company,
+        title=title,
+        location=location or None,
+        url=url or None,
+        description=description or None,
+        source="manual",
+        scraped_at=datetime.now(timezone.utc),
+        status=JobStatus.SCRAPED,
+        identity_hash=""
+    )
+    prior = await persistence.get_job(job.identity_hash)
+    await persistence.upsert_job(job)
+
+    try:
+        match = await coordinator.score_one(job.identity_hash, respect_threshold=False)
+    except Exception as e:
+        raise ManualEntryScoringError(
+            f"Saved, but scoring failed: {e}. Submit again to retry; "
+            "the next pipeline run will also score it."
+        ) from e
+
+    stored = await persistence.get_job(job.identity_hash)
+    return ManualEntryResult(
+        identity_hash=job.identity_hash,
+        company=company,
+        title=title,
+        score=match.score,
+        status=stored.status,
+        rescored=prior is None or prior.status == JobStatus.SCRAPED
+    )
+
 def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader) -> None:
     """
     Constructs the operational control center NiceGUI UI shell using DI.
@@ -310,10 +394,15 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
 
         Created per click and cleared on close, per NiceGUI's guidance that a
         Dialog is an element which is hidden rather than removed when closed.
-        Creating it here rather than in render_match_card also keeps it out of
-        the containers rebuild_cards clears, so an open dialog survives a rebuild.
+
+        Built inside dialog_host. The dialog attaches itself to the client layout,
+        but NiceGUI also creates a canary element in the current context and deletes
+        the dialog when that canary is collected (nicegui/elements/dialog.py). A click
+        handler runs in the sender's parent slot (nicegui/events.py, handle_event), and
+        the View button sits in a card inside a container rebuild_cards clears. Without
+        dialog_host the canary lands there, and a rebuild can delete an open dialog.
         """
-        with ui.dialog() as dialog, ui.card().classes("glass-card w-full max-w-3xl p-6 gap-4"):
+        with dialog_host, ui.dialog() as dialog, ui.card().classes("glass-card w-full max-w-3xl p-6 gap-4"):
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"{m.company} — {m.title}").classes("text-base font-bold text-slate-100")
                 ui.label(f"v{m.letter_version}").classes("text-xs font-mono text-slate-400")
@@ -327,6 +416,76 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                 copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
                 close_btn = ui.button("Close", on_click=dialog.close)
                 close_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+        dialog.on_value_change(lambda e: dialog.clear() if not e.value else None)
+        dialog.open()
+
+    def show_add_job_dialog() -> None:
+        """
+        Form for a job found outside the scraper, scored on submit.
+
+        Built inside dialog_host for the same reason as show_letter_dialog. Persistent,
+        so a stray click or Escape cannot discard a pasted description, and a failed
+        submit leaves the dialog open with the entered text intact.
+        """
+        def notify_safely(message: str, kind: str) -> None:
+            try:
+                ui.notify(message, type=kind, position="bottom-right")
+            except RuntimeError as re:
+                logger.warning("Could not show add-job notification", error=str(re))
+
+        with dialog_host, ui.dialog().props("persistent") as dialog, ui.card().classes("glass-card w-full max-w-2xl p-6 gap-4"):
+            ui.label("Add a job").classes("text-base font-bold text-slate-100")
+            ui.label("Scored on submit and added to the Pipeline tab, whatever the score.").classes("text-xs text-slate-400")
+            company_input = ui.input("Company *").classes("w-full")
+            title_input = ui.input("Title *").classes("w-full")
+            location_input = ui.input("Location").classes("w-full")
+            url_input = ui.input("URL").classes("w-full")
+            description_input = ui.textarea("Description").classes("w-full")
+
+            async def submit() -> None:
+                submit_btn.disable()
+                submit_btn.set_text("Scoring...")
+                try:
+                    result = await add_manual_job_handler(
+                        company=company_input.value,
+                        title=title_input.value,
+                        location=location_input.value,
+                        url=url_input.value,
+                        description=description_input.value,
+                        persistence=persistence,
+                        coordinator=coordinator
+                    )
+                except (ManualEntryValidationError, RunAlreadyActiveError) as e:
+                    notify_safely(str(e), "warning")
+                    submit_btn.enable()
+                    submit_btn.set_text("Add & Score")
+                    return
+                except Exception as e:
+                    logger.exception("Failed to add manual job")
+                    notify_safely(str(e), "negative")
+                    submit_btn.enable()
+                    submit_btn.set_text("Add & Score")
+                    return
+
+                if result.rescored:
+                    notify_safely(f"{result.company} — {result.title} scored {result.score}.", "positive")
+                else:
+                    notify_safely(
+                        f"{result.company} — {result.title} is already {result.status.value}: "
+                        f"stored score {result.score}, not re-scored.",
+                        "info"
+                    )
+                dialog.close()
+                try:
+                    await refresh()
+                except RuntimeError as re:
+                    logger.warning("Could not refresh after adding a manual job", error=str(re))
+
+            with ui.row().classes("w-full justify-end gap-2 border-t border-white/10 pt-3"):
+                cancel_btn = ui.button("Cancel", on_click=dialog.close)
+                cancel_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+                submit_btn = ui.button("Add & Score", on_click=submit)
+                submit_btn.classes("bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-md disabled:opacity-50")
         dialog.on_value_change(lambda e: dialog.clear() if not e.value else None)
         dialog.open()
 
@@ -416,6 +575,10 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                 # Sync Ledger Button
                 sync_button = ui.button("Sync Ledger", on_click=lambda: trigger_sync())
                 sync_button.classes("bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-650 hover:to-slate-750 text-white font-semibold px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-slate-950/50")
+
+                # Add Job Button
+                add_job_button = ui.button("Add Job", on_click=lambda: show_add_job_dialog())
+                add_job_button.classes("bg-gradient-to-r from-emerald-700 to-emerald-800 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-950/50")
             
         # Grid of cards: Status Panel + Lifetime Metrics
         with ui.row().classes("w-full gap-6"):
@@ -460,6 +623,10 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     non_matches_container = ui.column().classes("w-full gap-2")
                 with ui.tab_panel(tab_rejected).classes("p-0"):
                     rejected_container = ui.column().classes("w-full gap-2")
+
+        # Stable parent for dialogs. rebuild_cards never clears it, so a dialog built
+        # inside it cannot be deleted by a rebuild. See show_letter_dialog.
+        dialog_host = ui.element("div").classes("hidden")
 
     last_cards_signature = ""
 
