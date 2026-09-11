@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Any
 from nicegui import ui
 
-from domain import Run, RunStatus, JobPosting, JobStatus, display_location, normalize_field
+from domain import Run, RunStatus, JobPosting, JobStatus, CoverLetter, display_location, normalize_field
 from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
 
@@ -340,6 +340,25 @@ async def add_manual_job_handler(
         rescored=prior is None or prior.status == JobStatus.SCRAPED
     )
 
+class LetterEditValidationError(ValueError):
+    """Raised when an edited cover letter is empty."""
+    pass
+
+async def save_letter_edit_handler(
+    identity_hash: str,
+    text: Optional[str],
+    persistence,
+    expected_version: Optional[int] = None
+) -> CoverLetter:
+    """
+    Saves an edit to a job's current cover letter. Testable without a UI, like
+    generate_cover_letter_handler. Rejects empty or whitespace-only text before any
+    write; the text is stored exactly as typed.
+    """
+    if not (text or "").strip():
+        raise LetterEditValidationError("The letter cannot be empty.")
+    return await persistence.update_cover_letter(identity_hash, text, expected_version=expected_version)
+
 def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader) -> None:
     """
     Constructs the operational control center NiceGUI UI shell using DI.
@@ -388,12 +407,18 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         except RuntimeError as re:
             logger.warning("Could not copy to clipboard or show notification", error=str(re))
 
-    def show_letter_dialog(m: MatchCard) -> None:
+    async def show_letter_dialog(m: MatchCard) -> None:
         """
-        Open the full letter in a dialog.
+        Open the job's current letter in an editable dialog.
 
         Created per click and cleared on close, per NiceGUI's guidance that a
         Dialog is an element which is hidden rather than removed when closed.
+
+        The letter is read from the database when the dialog opens, not taken from
+        the MatchCard. Cards are rebuilt only when cards_signature changes, and an
+        edit changes no status count, so the View button's MatchCard still holds the
+        text from before the last edit. Save passes the version it opened, so a
+        regeneration that lands while the dialog is open is not overwritten.
 
         Built inside dialog_host. The dialog attaches itself to the client layout,
         but NiceGUI also creates a canary element in the current context and deletes
@@ -401,21 +426,58 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         handler runs in the sender's parent slot (nicegui/events.py, handle_event), and
         the View button sits in a card inside a container rebuild_cards clears. Without
         dialog_host the canary lands there, and a rebuild can delete an open dialog.
+
+        Persistent, so a stray click or Escape cannot discard an edit in progress.
         """
-        with dialog_host, ui.dialog() as dialog, ui.card().classes("glass-card w-full max-w-3xl p-6 gap-4"):
+        def notify_safely(message: str, kind: str) -> None:
+            try:
+                ui.notify(message, type=kind, position="bottom-right")
+            except RuntimeError as re:
+                logger.warning("Could not show letter dialog notification", error=str(re))
+
+        letter = await persistence.get_latest_cover_letter(m.identity_hash)
+        if letter is None:
+            notify_safely(f"{m.company} — {m.title} no longer has a cover letter.", "warning")
+            return
+
+        with dialog_host, ui.dialog().props("persistent") as dialog, ui.card().classes("glass-card w-full max-w-3xl p-6 gap-4"):
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"{m.company} — {m.title}").classes("text-base font-bold text-slate-100")
-                ui.label(f"v{m.letter_version}").classes("text-xs font-mono text-slate-400")
+                ui.label(f"v{letter.version}").classes("text-xs font-mono text-slate-400")
             ui.separator().classes("bg-white/10")
-            ui.label(m.letter_text or "").style(
-                "white-space: pre-wrap; word-break: break-word; max-height: 65vh; "
-                "overflow-y: auto; width: 100%; line-height: 1.6;"
-            ).classes("text-sm text-slate-200")
+            letter_input = ui.textarea(value=letter.text).classes("w-full").props(
+                'outlined input-class="font-mono text-sm" input-style="height: 58vh; line-height: 1.6"'
+            )
+
+            async def save() -> None:
+                save_btn.disable()
+                try:
+                    await save_letter_edit_handler(
+                        m.identity_hash,
+                        letter_input.value,
+                        persistence,
+                        expected_version=letter.version
+                    )
+                except LetterEditValidationError as e:
+                    notify_safely(str(e), "warning")
+                    save_btn.enable()
+                    return
+                except Exception as e:
+                    logger.exception("Failed to save cover letter edit", identity_hash=m.identity_hash)
+                    notify_safely(f"Could not save the letter: {e}", "negative")
+                    save_btn.enable()
+                    return
+                notify_safely("Cover letter saved.", "positive")
+                dialog.close()
+
             with ui.row().classes("w-full justify-end gap-2 border-t border-white/10 pt-3"):
-                copy_btn = ui.button("Copy", on_click=lambda: copy_letter_to_clipboard(m.letter_text))
+                # Reads the textarea at click time, so Copy after an edit copies the edit.
+                copy_btn = ui.button("Copy", on_click=lambda: copy_letter_to_clipboard(letter_input.value or ""))
                 copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
                 close_btn = ui.button("Close", on_click=dialog.close)
-                close_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+                close_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+                save_btn = ui.button("Save", on_click=save)
+                save_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50")
         dialog.on_value_change(lambda e: dialog.clear() if not e.value else None)
         dialog.open()
 
