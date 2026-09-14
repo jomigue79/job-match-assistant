@@ -20,7 +20,7 @@ def main():
     from skills.writer import Writer
     from knowledge import KnowledgeLoader
     
-    writer = Writer()
+    writer = Writer(candidate_name=settings.candidate_name)
     knowledge_loader = KnowledgeLoader(settings.knowledge_dir)
     
     build_ui(coordinator, persistence_service, writer, knowledge_loader)
