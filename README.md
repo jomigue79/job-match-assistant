@@ -282,5 +282,19 @@ An honest list.
   compute units but never passes them to the cost accumulator, so
   `cost_estimated_usd` covers LLM tokens only. Audit item B2.
 
-Plans and analysis for the work already done are in [docs/plans/](docs/plans/),
-and the original architecture audit is [docs/HANDOFF.md](docs/HANDOFF.md).
+---
+
+## Project documents
+
+The reasoning behind the code lives in [docs/](docs/). The four project documents
+each open with a status header saying what still holds and what has moved — read
+that before the body.
+
+| Document | What it is for |
+| :--- | :--- |
+| [PROJECT_INSTRUCTIONS.md](docs/PROJECT_INSTRUCTIONS.md) | The rules the work is done under: no fabrication, ask before adding a dependency, what must not break. |
+| [ATS_DOMAIN_BRIEF.md](docs/ATS_DOMAIN_BRIEF.md) | How postings are judged: hard gates, fit dimensions, calibration. |
+| [WORK_ORDER.md](docs/WORK_ORDER.md) | The batches of work planned from the audit, with their status. |
+| [DECISIONS.md](docs/DECISIONS.md) | Architectural decisions D1–D10: what was decided, the cost, and what would reverse it. |
+| [HANDOFF.md](docs/HANDOFF.md) | The original architecture audit and the finding IDs (A, B, C) that plans and commits cite. |
+| [plans/](docs/plans/) | One implementation plan per change: intent, scope, decisions, acceptance criteria, backlog. |
