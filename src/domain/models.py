@@ -195,7 +195,7 @@ class MatchResult(BaseModel):
 
     identity_hash: str
     score: int = Field(..., ge=0, le=100)
-    dimension_breakdown: Dict[str, float]
+    dimension_breakdown: Dict[str, Optional[float]]
     match_reasons: List[str]
     scored_at: datetime
 

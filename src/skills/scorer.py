@@ -28,6 +28,38 @@ DIMENSION_WEIGHTS = {
 assert abs(sum(DIMENSION_WEIGHTS.values()) - 1.0) < 1e-9, \
     "DIMENSION_WEIGHTS must sum to 1.0"
 
+# Dimensions the model may return as null when the posting does not involve the
+# property at all. A null dimension is left out and its weight is redistributed
+# across the applicable ones, so a job is not capped below 100 for lacking a
+# property it was never meant to have. Every other dimension always applies.
+NULLABLE_DIMENSIONS = frozenset({"AI literacy & development"})
+
+assert NULLABLE_DIMENSIONS <= set(DIMENSION_WEIGHTS), \
+    "NULLABLE_DIMENSIONS must name weighted dimensions"
+assert all(w > 0 for w in DIMENSION_WEIGHTS.values()), \
+    "DIMENSION_WEIGHTS must all be positive"
+
+
+def compute_score(dimensions: dict) -> int:
+    """
+    Weighted score from validated dimension values: each 0-100, or None where
+    NULLABLE_DIMENSIONS allows it.
+
+    A None dimension is left out and the remaining weights are rescaled to sum to 1,
+    so the result stays within 0-100. With every dimension present the plain
+    weighted sum is rounded exactly as before nullable dimensions existed.
+    """
+    applicable = [k for k in DIMENSION_WEIGHTS if dimensions[k] is not None]
+    applicable_weight = sum(DIMENSION_WEIGHTS[k] for k in applicable)
+    if applicable_weight <= 0:
+        raise ScorerError(
+            "No applicable dimensions: every dimension is null, so the score is undefined."
+        )
+    weighted = sum(DIMENSION_WEIGHTS[k] * dimensions[k] for k in applicable)
+    if len(applicable) == len(DIMENSION_WEIGHTS):
+        return round(weighted)
+    return round(weighted / applicable_weight)
+
 SYSTEM_PROMPT = """You are an expert recruitment analyst evaluating whether a job posting is a good fit for a specific candidate.
 Your task is to score the provided Job Posting against the candidate's CV using the specified evaluation criteria.
 
@@ -40,7 +72,7 @@ Adhere strictly to the following rules:
 JSON Schema:
 {
   "dimensions": {
-    "dimension_name": numeric rating 0-100,
+    "dimension_name": numeric rating 0-100, or null only where the evaluation criteria allow it,
     ...
   },
   "reasons": [
@@ -135,6 +167,13 @@ class Scorer:
             )
 
         for k, v in dimensions.items():
+            if v is None:
+                if k not in NULLABLE_DIMENSIONS:
+                    raise ScorerError(
+                        f"Model output 'dimensions' value for key '{k}' is null; "
+                        f"only {sorted(NULLABLE_DIMENSIONS)} may be null."
+                    )
+                continue
             if not isinstance(v, (int, float)) or isinstance(v, bool):
                 raise ScorerError(f"Model output 'dimensions' value for key '{k}' must be numeric.")
             if not (0 <= v <= 100):
@@ -153,13 +192,14 @@ class Scorer:
                 raise ScorerError("Model output 'reasons' elements must be non-empty strings.")
 
         # Score is computed here, not returned by the model. See DIMENSION_WEIGHTS.
-        score = round(sum(DIMENSION_WEIGHTS[k] * dimensions[k] for k in DIMENSION_WEIGHTS))
+        score = compute_score(dimensions)
 
         # Log metadata only
         logger.info(
             "ATS job scoring complete",
             identity_hash=job.identity_hash,
             score=score,
+            null_dimensions=sorted(k for k, v in dimensions.items() if v is None),
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             model=response.model
@@ -168,7 +208,7 @@ class Scorer:
         return MatchResult(
             identity_hash=job.identity_hash,
             score=score,
-            dimension_breakdown={k: float(v) for k, v in dimensions.items()},
+            dimension_breakdown={k: (None if v is None else float(v)) for k, v in dimensions.items()},
             match_reasons=reasons,
             scored_at=datetime.now(timezone.utc)
         )
