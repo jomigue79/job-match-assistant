@@ -79,6 +79,12 @@ This document provides a detailed reference for all configuration options suppor
 | `UI_PORT` | `8080` | Valid port | Port the web dashboard exposes. |
 | `UI_EXIT_GRACE_SECONDS` | `5` | `value >= 0` | Seconds to wait after the last browser tab disconnects before the server shuts down. Absorbs page refreshes. |
 
+### Cover Letter Export
+
+| Env Key | Default Value | Description |
+| :--- | :--- | :--- |
+| `CANDIDATE_NAME` | *empty* | Name printed above the date on exported cover letter PDFs. Blank omits the line; the date and company are still shown. Personal data: set it only in `.env`, which is gitignored. |
+
 ---
 
 ## Validation Details

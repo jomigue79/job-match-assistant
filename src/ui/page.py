@@ -5,6 +5,8 @@ from nicegui import ui
 from domain import Run, RunStatus, JobPosting, JobStatus, CoverLetter, display_location, normalize_field
 from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
+from config import get_settings
+from export import LetterPdfError, build_letter_pdf, letter_pdf_filename
 
 from datetime import datetime, timezone
 
@@ -428,6 +430,9 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         dialog_host the canary lands there, and a rebuild can delete an open dialog.
 
         Persistent, so a stray click or Escape cannot discard an edit in progress.
+
+        PDF exports the textarea as shown, saved or not, and says so when the edits
+        are unsaved: exporting never saves, because saving is a destructive write.
         """
         def notify_safely(message: str, kind: str) -> None:
             try:
@@ -470,10 +475,38 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                 notify_safely("Cover letter saved.", "positive")
                 dialog.close()
 
+            def export_pdf() -> None:
+                text = letter_input.value or ""
+                try:
+                    pdf_bytes = build_letter_pdf(
+                        text,
+                        company=m.company,
+                        candidate_name=get_settings().candidate_name
+                    )
+                except LetterPdfError as e:
+                    notify_safely(str(e), "warning")
+                    return
+                except Exception as e:
+                    logger.exception("Failed to export cover letter PDF", identity_hash=m.identity_hash)
+                    notify_safely(f"Could not export the PDF: {e}", "negative")
+                    return
+                ui.download.content(pdf_bytes, letter_pdf_filename(m.company, m.title), "application/pdf")
+                # letter.text is what the database holds while this dialog is open:
+                # a successful Save closes it.
+                if text != letter.text:
+                    notify_safely(
+                        "PDF downloaded with unsaved edits. They are not saved yet — press Save to keep them.",
+                        "warning"
+                    )
+                else:
+                    notify_safely("PDF downloaded.", "positive")
+
             with ui.row().classes("w-full justify-end gap-2 border-t border-white/10 pt-3"):
                 # Reads the textarea at click time, so Copy after an edit copies the edit.
                 copy_btn = ui.button("Copy", on_click=lambda: copy_letter_to_clipboard(letter_input.value or ""))
                 copy_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
+                pdf_btn = ui.button("PDF", on_click=export_pdf)
+                pdf_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
                 close_btn = ui.button("Close", on_click=dialog.close)
                 close_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
                 save_btn = ui.button("Save", on_click=save)

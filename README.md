@@ -51,6 +51,7 @@ Then edit `.env`. These are the keys you must set:
 | `SCRAPER_LOCATION` | Where. | — |
 | `SCRAPER_LIMIT` | Results per run. Start small. | — |
 | `SCORE_THRESHOLD` | Score at or above which a job counts as a match. | See Known gaps — the default of 70 may be high. |
+| `CANDIDATE_NAME` | Your name as it should appear at the top of an exported cover letter. Optional. | — |
 
 Every key is documented in [CONFIG.md](CONFIG.md).
 
@@ -200,8 +201,16 @@ The dashboard has four tabs.
 | **Non-Matches** | Below threshold. Compact list, scores only. |
 | **Rejected** | Dismissed, or applied and closed out. |
 
-On a matched card you can **Write Letter**, **View** the result in a modal with a
-Copy button, **Regenerate**, **Mark Applied**, or **Reject**.
+On a matched card you can **Write Letter**, **Regenerate**, **Mark Applied**, or
+**Reject**. **View** opens the letter in an editable dialog: **Save** keeps your
+edits, **Copy** copies the text as shown, and **PDF** downloads it — including any
+edits you have not saved yet.
+
+PDF export uses the PDF format's built-in Helvetica font, which covers Latin-1
+(Western European) characters only. Curly apostrophes and en-dashes are converted
+to their plain equivalents; any other character outside Latin-1 — a Euro sign, a
+Polish or Turkish name — stops the export with a message naming the character. The
+name at the top of the PDF comes from `CANDIDATE_NAME` in `.env`.
 
 Closing out an application uses the same **Withdraw / Reject** button on an
 applied card. There is no separate "closed" status — `rejected` means both

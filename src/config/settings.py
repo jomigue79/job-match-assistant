@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     ui_port: int = Field(default=8080, validation_alias="UI_PORT")
     ui_exit_grace_seconds: float = Field(default=5.0, validation_alias="UI_EXIT_GRACE_SECONDS")
 
+    # Cover letter export: name printed above the date on exported PDFs. Blank omits the line.
+    candidate_name: str = Field(default="", validation_alias="CANDIDATE_NAME")
+
     @field_validator("score_threshold")
     @classmethod
     def validate_score_threshold(cls, v: int) -> int:
