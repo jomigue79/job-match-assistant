@@ -26,6 +26,12 @@ not as a document for a human reader.
 
   Keep them summing to 1.00, and keep them in sync with DIMENSION_WEIGHTS in
   src/skills/scorer.py — reweighting is a code change, not a markdown edit.
+- A dimension measuring something only some postings have may return `null`
+  when the posting does not have it. The code leaves a null dimension out and
+  spreads its weight across the rest in proportion, so `null` is not a penalty.
+  Only dimensions listed in NULLABLE_DIMENSIONS in src/skills/scorer.py may be
+  null — like the weights, that is a code change, not a markdown edit. On a
+  failed gate, every dimension is 0, never null.
 - A failed hard gate overrides everything: every dimension is 0, and one entry
   in `reasons` naming the gate. The computed score is then 0.
 
@@ -82,6 +88,11 @@ produce flat distributions that carry no information.
 100, and say so in `reasons`. The CV has failed to cover nothing, and nothing has
 been demonstrated either. 50 neither rewards nor punishes a vague posting.
 
+**A dimension that only some postings involve** should return `null` when the
+posting does not involve it, and say so in `reasons`. Returning 0 there would
+penalise the job for a property it was never meant to have. Keep 0 for a role
+that does involve it where the CV evidences none.
+
 If your CV states a certification that is a recognised equivalent of one a
 posting asks for, say so explicitly in this section. That is an equivalence, not
 an inference, and a model will not assume it on your behalf.
@@ -118,7 +129,7 @@ Return only the JSON object, with your five dimension keys exactly as named in
 the posting is not scored:
 
     {
-      "dimensions": { "key 1": integer 0-100, "key 2": integer 0-100 },
+      "dimensions": { "key 1": integer 0-100, "key 2": integer 0-100 or null where §0 allows it },
       "reasons": ["one per dimension", "FLAG: ..."]
     }
 

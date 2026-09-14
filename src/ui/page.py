@@ -194,6 +194,10 @@ def build_view_state(
         cards_signature=cards_signature
     )
 
+def format_dimension_value(value) -> str:
+    """'n/a' for a not-applicable (null) dimension, so it cannot be mistaken for a genuine 0."""
+    return "n/a" if value is None else str(value)
+
 import observability
 logger = observability.get_logger("page")
 
@@ -781,7 +785,7 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                     with ui.row().classes("w-full items-center justify-between text-xs"):
                         ui.label(dim_name).classes("text-slate-350 truncate w-1/2")
                         with ui.row().classes("items-center gap-2 flex-1 justify-end"):
-                            ui.label(str(dim_score)).classes("font-mono font-semibold text-slate-200")
+                            ui.label(format_dimension_value(dim_score)).classes("font-mono font-semibold " + ("text-slate-500 italic" if dim_score is None else "text-slate-200"))
                             
             # Match reasons
             with ui.column().classes("w-full gap-1 mt-2"):
