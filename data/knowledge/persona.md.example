@@ -20,3 +20,6 @@
 ## Hard rules
 - Every claim must be grounded in cv.md. If the role requires something not in the
   CV, do not fabricate it; address transferable experience honestly instead.
+- This file supplies voice, never facts. Keep any examples generic and never draw
+  them from your real history: a model reading this file will repeat an anecdote
+  as if your CV contained it.

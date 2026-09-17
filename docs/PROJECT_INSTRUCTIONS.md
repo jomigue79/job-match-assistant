@@ -18,6 +18,17 @@
 >   a stop before every commit, merge and push.
 > - **Language matching**, required below, was not implemented in any prompt
 >   until `ab98608`. See `docs/plans/letter-salutation-signoff.md`.
+> - **Line 152 is narrowed.** "Cover letters may only recombine facts
+>   present in `cv.md` and `persona.md`" now reads as `cv.md` only.
+>   `persona.md` supplies voice, not facts — it contained project claims the
+>   writer asserted as the candidate's experience across 12 companies. See
+>   `docs/plans/persona-voice-not-content.md`.
+> - **"Match the language of the posting" is withdrawn.** Every letter is
+>   written in English, whatever language the posting is in. Three attempts at a
+>   language rule failed in three different ways — the persona's cues, then the
+>   company name, then the closing phrase — and a predictable English letter the
+>   user translates himself is worth more than a rule the model does not follow.
+>   See `docs/plans/english-only-letters.md`.
 
 ---
 
