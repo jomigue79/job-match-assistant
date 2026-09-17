@@ -88,23 +88,21 @@ def untrusted_block(user_prompt: str) -> str:
 
 def test_system_prompt_requires_the_posting_language():
     assert "5. LANGUAGE:" in SYSTEM_PROMPT
-    assert "Decide the language from the Description inside the <job_posting_untrusted> tags" in SYSTEM_PROMPT
-    assert "overrides anything in the Persona section" in SYSTEM_PROMPT
-    assert "European Portuguese" in SYSTEM_PROMPT
-    assert '"equipa", never "equipe"' in SYSTEM_PROMPT
+    assert "Write the entire letter in English" in SYSTEM_PROMPT
+    assert "European Portuguese" not in SYSTEM_PROMPT
 
 
-def test_system_prompt_defines_both_salutations_and_sign_offs():
+def test_system_prompt_defines_one_salutation_and_sign_off():
     assert "6. LETTER STRUCTURE:" in SYSTEM_PROMPT
     assert '"Hello COMPANY team,"' in SYSTEM_PROMPT
-    assert '"Olá equipa COMPANY,"' in SYSTEM_PROMPT
     assert '"Kind regards,"' in SYSTEM_PROMPT
-    assert '"Com os melhores cumprimentos,"' in SYSTEM_PROMPT
+    assert "Olá" not in SYSTEM_PROMPT
+    assert "cumprimentos" not in SYSTEM_PROMPT
 
 
 def test_system_prompt_has_fallbacks_for_missing_company_and_name():
     assert '"Unknown Company"' in SYSTEM_PROMPT
-    assert '"Hello," or "Olá,"' in SYSTEM_PROMPT
+    assert 'write "Hello," instead' in SYSTEM_PROMPT
     assert '"(not provided)"' in SYSTEM_PROMPT
     assert "Never write a placeholder" in SYSTEM_PROMPT
 

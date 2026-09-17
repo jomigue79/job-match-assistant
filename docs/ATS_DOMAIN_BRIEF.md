@@ -19,6 +19,17 @@
 >   `src/skills/writer.py` rule 5: European Portuguese, "equipa", never "equipe".
 > - **Language matching**, required by §2 and §5, was first implemented in
 >   `ab98608`. Before that every letter was English regardless of the posting.
+> - **§5 is narrowed.** "The letter may only recombine facts present in
+>   `cv.md` and `persona.md`" now reads as `cv.md` only. `persona.md` supplies
+>   voice, not facts — it contained project claims the writer asserted as the
+>   candidate's experience across 12 companies. See
+>   `docs/plans/persona-voice-not-content.md`.
+> - **§5's language rule is withdrawn.** Every letter is written in English,
+>   whatever language the posting is in. Three attempts at a language rule failed
+>   in three different ways — the persona's cues, then the company name, then the
+>   closing phrase — and a predictable English letter the user translates himself
+>   is worth more than a rule the model does not follow. See
+>   `docs/plans/english-only-letters.md`.
 
 ---
 
