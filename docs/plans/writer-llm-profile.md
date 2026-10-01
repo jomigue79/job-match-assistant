@@ -15,7 +15,7 @@ The scorer runs on every scraped job and must stay on a cheap model. The writer 
 6. src/ui/main.py:23 passes build_llm_client(settings.writer_llm_profile()) to Writer. The scorer path (run_coordinator.py:450) is untouched.
 7. Cost estimates for writer calls use the writer profile's rates.
 8. Each LLM call logs provider and model (never the key). The structlog redaction processor is unchanged.
-9. .env.example documents the WRITER_LLM_* block, commented out, with an OpenAI example (provider "openai", a stronger model, base URL left empty for OpenAI itself) and a note that rates must match the model.
+9. .env.example documents the WRITER_LLM_* block, commented out, with an OpenAI example (provider "openai", model gpt-6.1-sol as listed on developers.openai.com/api/docs/models on 2026-10-01, base URL left empty for OpenAI itself) and a note that rates must match the model and must be re-checked before use.
 
 ## Revisions after implementation review
 
