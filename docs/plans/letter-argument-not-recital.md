@@ -274,3 +274,6 @@ The reference posting plus one other project-manager posting, two regenerations 
 - No CV line reproduced as a list; no method or certification the posting does not ask for.
 - Body 200–300 words.
 - Addendum 1 checks still hold (tenure, gap, close).
+
+### Outcome
+Acceptance failed on the first letter: the opening described the role, the paragraphs followed the CV by employer, a CV line listing a governance framework was reproduced again, and the letter claimed data-governance experience the CV does not contain. The rules are retained — they become the writing step of the two-step writer. The mechanism changes in docs/plans/writer-llm-profile.md and the two-step plan that follows.
