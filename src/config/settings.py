@@ -3,6 +3,9 @@ from pathlib import Path
 from pydantic import Field, SecretStr, field_validator, model_validator, ValidationError, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The three values the OpenAI API accepts for reasoning_effort.
+REASONING_EFFORTS = {"low", "medium", "high"}
+
 class ConfigurationError(ValueError):
     """Raised when application configuration is missing or invalid."""
     pass
@@ -55,6 +58,13 @@ class Settings(BaseSettings):
     writer_llm_base_url: str | None = Field(default=None, validation_alias="WRITER_LLM_BASE_URL")
     writer_llm_input_token_rate_usd: float | None = Field(default=None, validation_alias="WRITER_LLM_INPUT_TOKEN_RATE_USD")
     writer_llm_output_token_rate_usd: float | None = Field(default=None, validation_alias="WRITER_LLM_OUTPUT_TOKEN_RATE_USD")
+
+    # Reasoning models take a different request shape. Keep false for Gemini and for
+    # ordinary OpenAI chat models; the writer's two fields inherit when unset.
+    llm_reasoning: bool = Field(default=False, validation_alias="LLM_REASONING")
+    llm_reasoning_effort: str = Field(default="medium", validation_alias="LLM_REASONING_EFFORT")
+    writer_llm_reasoning: bool | None = Field(default=None, validation_alias="WRITER_LLM_REASONING")
+    writer_llm_reasoning_effort: str | None = Field(default=None, validation_alias="WRITER_LLM_REASONING_EFFORT")
     
     # Scoring Config
     score_threshold: int = Field(default=70, validation_alias="SCORE_THRESHOLD")
@@ -139,6 +149,20 @@ class Settings(BaseSettings):
             raise ValueError("run_budget_cap_usd must not be negative")
         return v
 
+    @field_validator("llm_reasoning_effort")
+    @classmethod
+    def validate_llm_reasoning_effort(cls, v: str) -> str:
+        if v not in REASONING_EFFORTS:
+            raise ValueError(f"LLM_REASONING_EFFORT must be one of {sorted(REASONING_EFFORTS)}")
+        return v
+
+    @field_validator("writer_llm_reasoning_effort")
+    @classmethod
+    def validate_writer_llm_reasoning_effort(cls, v):
+        if v is not None and v not in REASONING_EFFORTS:
+            raise ValueError(f"WRITER_LLM_REASONING_EFFORT must be one of {sorted(REASONING_EFFORTS)}")
+        return v
+
     @model_validator(mode="after")
     def validate_llm_profiles(self):
         if self.writer_llm_provider and self.writer_llm_provider != self.llm_provider and self.writer_llm_api_key is None:
@@ -159,7 +183,30 @@ class Settings(BaseSettings):
                 "LLM_BASE_URL is set but LLM_PROVIDER is 'google', which ignores it; "
                 "use provider 'openai' for an OpenAI-compatible endpoint, or remove LLM_BASE_URL"
             )
+        if self.llm_reasoning and self.llm_provider == "google":
+            raise ValueError(
+                "LLM_REASONING is true but LLM_PROVIDER is 'google': reasoning effort and "
+                "max_completion_tokens belong to the OpenAI API, and the Google adapter "
+                "sends neither; use provider 'openai' or set LLM_REASONING=false"
+            )
+        if self.writer_reasoning() and writer_provider == "google":
+            raise ValueError(
+                "the writer's reasoning is true but its provider is 'google': use provider "
+                "'openai' for the writer, or set WRITER_LLM_REASONING=false"
+            )
         return self
+
+    def writer_reasoning(self) -> bool:
+        """
+        The writer's reasoning flag, inherited when unset.
+
+        `is not None`, not `or`: WRITER_LLM_REASONING=false is a deliberate override and
+        `or` would silently inherit a true main setting.
+        """
+        return self.writer_llm_reasoning if self.writer_llm_reasoning is not None else self.llm_reasoning
+
+    def writer_reasoning_effort(self) -> str:
+        return self.writer_llm_reasoning_effort or self.llm_reasoning_effort
 
     def main_llm_profile(self):
         """The profile the scorer and every other skill call on."""
@@ -173,6 +220,8 @@ class Settings(BaseSettings):
             base_url=self.llm_base_url,
             input_token_rate_usd=self.llm_input_token_rate_usd,
             output_token_rate_usd=self.llm_output_token_rate_usd,
+            reasoning=self.llm_reasoning,
+            reasoning_effort=self.llm_reasoning_effort,
         )
 
     def writer_llm_profile(self):
@@ -198,12 +247,37 @@ class Settings(BaseSettings):
                 if self.writer_llm_output_token_rate_usd is not None
                 else self.llm_output_token_rate_usd
             ),
+            reasoning=self.writer_reasoning(),
+            reasoning_effort=self.writer_reasoning_effort(),
         )
 
     @property
     def scraper_queries(self) -> list[str]:
         """SCRAPER_QUERY as a list of job titles, already stripped and validated."""
         return self.scraper_query.split(",")
+
+def _warn_on_unused_reasoning_effort(settings: "Settings") -> None:
+    """
+    An effort set while reasoning is off does nothing. Not an error: it is how a profile
+    reads when reasoning is switched off for a test, and failing to load over a dormant
+    value would be worse than saying so.
+    """
+    unused = []
+    if not settings.llm_reasoning and settings.llm_reasoning_effort != "medium":
+        unused.append("LLM_REASONING_EFFORT")
+    if not settings.writer_reasoning() and settings.writer_llm_reasoning_effort is not None:
+        unused.append("WRITER_LLM_REASONING_EFFORT")
+    if not unused:
+        return
+    try:
+        from observability import get_logger
+        get_logger("config").info(
+            "Reasoning effort is set but reasoning is off, so it is ignored",
+            variables=unused,
+        )
+    except Exception:
+        pass
+
 
 def _warn_on_inherited_writer_rates(settings: "Settings") -> None:
     """
@@ -248,6 +322,7 @@ def get_settings(_env_file: str | None = ".env") -> Settings:
             Path(d).mkdir(parents=True, exist_ok=True)
 
         _warn_on_inherited_writer_rates(settings)
+        _warn_on_unused_reasoning_effort(settings)
 
         return settings
     except ValidationError as e:

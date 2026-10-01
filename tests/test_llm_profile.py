@@ -54,6 +54,8 @@ def base_env(monkeypatch):
         "WRITER_LLM_BASE_URL",
         "WRITER_LLM_INPUT_TOKEN_RATE_USD",
         "WRITER_LLM_OUTPUT_TOKEN_RATE_USD",
+        "WRITER_LLM_REASONING",
+        "WRITER_LLM_REASONING_EFFORT",
     ]:
         monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()

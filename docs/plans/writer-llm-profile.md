@@ -15,7 +15,7 @@ The scorer runs on every scraped job and must stay on a cheap model. The writer 
 6. src/ui/main.py:23 passes build_llm_client(settings.writer_llm_profile()) to Writer. The scorer path (run_coordinator.py:450) is untouched.
 7. Cost estimates for writer calls use the writer profile's rates.
 8. Each LLM call logs provider and model (never the key). The structlog redaction processor is unchanged.
-9. .env.example documents the WRITER_LLM_* block, commented out, with an OpenAI example (provider "openai", a stronger model, base URL left empty for OpenAI itself) and a note that rates must match the model.
+9. .env.example documents the WRITER_LLM_* block, commented out, with an OpenAI example (provider "openai", model gpt-6.1-sol as listed on developers.openai.com/api/docs/models on 2026-10-01, base URL left empty for OpenAI itself) and a note that rates must match the model and must be re-checked before use.
 
 ## Revisions after implementation review
 
@@ -28,6 +28,29 @@ The scorer runs on every scraped job and must stay on a cheap model. The writer 
 7. get_settings is lru_cached (settings.py:137-138), so any WRITER_LLM_* change needs an app restart. The UI also runs with reload=False (D10).
 
 LLMProfile lives in src/llm/types.py, with deferred imports inside the two Settings methods: llm.client already imports config, so a module-level import of llm from config would close a cycle. observability/metrics.py:30-42 dodges the same cycle the same way.
+
+### Known costs
+
+- **Reasoning models run at temperature 1.** The API rejects any other value, so the
+  scorer's 0.0 (scorer.py:128) is inert on such a model and dimension values vary more
+  between scorings of the same job. The computed score is still arithmetic in code, so
+  the sum cannot drift, but the inputs to it can. Measured in the follow-up re-score
+  check rather than assumed.
+- **LLM spend is not covered by RUN_BUDGET_CAP_USD.** The pre-run projection in
+  run_coordinator covers Apify only, and a reasoning model with the 8000-token
+  completion floor costs an order of magnitude more per scored job than Gemini did.
+  Nothing refuses a run on that basis. Backlog.
+
+### Backlog
+
+- **A per-job error record, and n_errors where the user can see it.** A scoring failure
+  is already caught per job and the run already continues (run_coordinator.py:273), but
+  the job stays `scraped` with nothing recorded, and n_errors is persisted and never
+  displayed. Needs two jobs columns and a migration numbered after the two-step
+  writer's, since that branch already holds the v2 upgrade and the live database is
+  already at version 2.
+- **LLM cost inside the run budget cap**, so a run can be refused on projected LLM
+  spend and not only on projected Apify spend.
 
 ## Out of scope
 The two-step writer (next plan). Temperature (stays hardcoded per skill for now). Any scorer change. No new dependency.
