@@ -46,6 +46,9 @@ def base_env(monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", MAIN_KEY)
     monkeypatch.setenv("LLM_INPUT_TOKEN_RATE_USD", "0.000001")
     monkeypatch.setenv("LLM_OUTPUT_TOKEN_RATE_USD", "0.000002")
+    # Set explicitly, not deleted: pydantic-settings falls back to the .env file, and
+    # the live .env sets LLM_REASONING. A deleted variable is not an absent one.
+    monkeypatch.setenv("LLM_REASONING", "false")
     for name in [
         "LLM_BASE_URL",
         "WRITER_LLM_PROVIDER",
@@ -125,7 +128,7 @@ def make_job():
 
 
 def make_knowledge():
-    return KnowledgeBase(cv="CV text.", persona="Write plainly.", ats_criteria="Criteria.")
+    return KnowledgeBase(cv="CV text.", persona="Write plainly.", ats_criteria="Criteria.", letter_rules="rules: lead with the strongest match", voice="voice: plain and concrete")
 
 
 def make_match():

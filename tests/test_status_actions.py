@@ -51,7 +51,7 @@ class FakeDedupService:
 class FakeKnowledgeLoader:
     def load(self):
         from knowledge import KnowledgeBase
-        return KnowledgeBase(cv="CV", persona="Persona", ats_criteria="Criteria")
+        return KnowledgeBase(cv="CV", persona="Persona", ats_criteria="Criteria", letter_rules="rules: lead with the strongest match", voice="voice: plain and concrete")
 
 @pytest.fixture
 def db_path(tmp_path):

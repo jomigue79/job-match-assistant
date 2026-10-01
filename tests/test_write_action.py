@@ -5,16 +5,18 @@ from domain import JobPosting, JobStatus, MatchResult
 from knowledge import KnowledgeBase
 from persistence import init_db, PersistenceService, JobWithMatch, Counters
 from skills.writer import WriterError
-from ui.page import build_view_state, generate_cover_letter_handler
+from ui.page import WRITER_FAILURE_MESSAGE, build_view_state, generate_cover_letter_handler
 
 class FakeWriter:
     def __init__(self, response_text: str = "", should_raise: bool = False):
         self.response_text = response_text
         self.should_raise = should_raise
         self.called_with = None
+        self.instruction = None
 
-    async def generate(self, job, knowledge, match_result, cost_accumulator = None):
+    async def generate(self, job, knowledge, match_result, cost_accumulator = None, instruction = ""):
         self.called_with = (job, knowledge, match_result)
+        self.instruction = instruction
         if self.should_raise:
             raise WriterError("Simulated generation failure")
         return self.response_text
@@ -49,7 +51,9 @@ def make_knowledge_base():
     return KnowledgeBase(
         cv="CV Text",
         persona="Persona Text",
-        ats_criteria="Criteria Text"
+        ats_criteria="Criteria Text",
+        letter_rules="rules: lead with the strongest match",
+        voice="voice: plain and concrete",
     )
 
 def make_match_result(job_hash):
@@ -123,7 +127,7 @@ async def test_write_action_regenerate_increments_version(db_path):
         writer=writer_1,
         knowledge_loader=loader,
         generating_hashes=generating_hashes,
-        on_error_notify_callback=lambda msg: errors.append(msg)
+        on_error_notify_callback=lambda msg, kind="negative": errors.append((msg, kind))
     )
     
     # Second generate (Regenerate)
@@ -133,7 +137,7 @@ async def test_write_action_regenerate_increments_version(db_path):
         writer=writer_2,
         knowledge_loader=loader,
         generating_hashes=generating_hashes,
-        on_error_notify_callback=lambda msg: errors.append(msg)
+        on_error_notify_callback=lambda msg, kind="negative": errors.append((msg, kind))
     )
     
     # Assert no errors occurred
@@ -168,7 +172,7 @@ async def test_write_action_writer_error_preserves_status(db_path):
         writer=writer,
         knowledge_loader=loader,
         generating_hashes=generating_hashes,
-        on_error_notify_callback=lambda msg: errors.append(msg)
+        on_error_notify_callback=lambda msg, kind="negative": errors.append((msg, kind))
     )
     
     # Assert status remains MATCHED
@@ -181,7 +185,9 @@ async def test_write_action_writer_error_preserves_status(db_path):
     
     # Assert error notified
     assert len(errors) == 1
-    assert "Simulated generation failure" in errors[0]
+    # The user is told the writer failed, not the exception's own words.
+    assert errors[0][0] == WRITER_FAILURE_MESSAGE
+    assert errors[0][1] == "warning"
 
 @pytest.mark.asyncio
 async def test_build_view_state_with_and_without_letter():
@@ -268,16 +274,15 @@ async def test_write_action_notify_runtime_error_does_not_crash(db_path, monkeyp
     # Assert hash is discarded
     assert job.identity_hash not in generating_hashes
     
-    # Assert it logged a warning
-    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any("Default notification raised RuntimeError" in w or "parent element" in w for w in warnings)
+    # A lost notification is an ERROR carrying the text the user never saw.
+    assert "Could not show the user why letter generation failed" in caplog.text
     
     # Reset state
     generating_hashes.clear()
     caplog.clear()
     
     # 2. Test when on_error_notify_callback is provided but raises RuntimeError
-    def bad_callback(msg):
+    def bad_callback(msg, kind="negative"):
         raise RuntimeError("Slot deleted")
         
     await generate_cover_letter_handler(
@@ -290,5 +295,4 @@ async def test_write_action_notify_runtime_error_does_not_crash(db_path, monkeyp
     )
     
     assert job.identity_hash not in generating_hashes
-    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any("Error callback notification raised RuntimeError" in w or "deleted" in w for w in warnings)
+    assert "Could not show the user why letter generation failed" in caplog.text

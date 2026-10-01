@@ -19,6 +19,8 @@ def test_backup_happy_path(tmp_path):
     (knowledge_dir / "cv.md").write_text("CV Content", encoding="utf-8")
     (knowledge_dir / "persona.md").write_text("Persona Content", encoding="utf-8")
     (knowledge_dir / "ats_criteria.md").write_text("ATS Content", encoding="utf-8")
+    (knowledge_dir / "letter_rules.md").write_text("Rules Content", encoding="utf-8")
+    (knowledge_dir / "voice.md").write_text("Voice Content", encoding="utf-8")
     
     env_path = tmp_path / ".env"
     env_path.write_text("ENV Content", encoding="utf-8")
@@ -56,6 +58,9 @@ def test_backup_happy_path(tmp_path):
         assert "cv.md" in file_list
         assert "persona.md" in file_list
         assert "ats_criteria.md" in file_list
+        # Owner-editable and gitignored: the backup is their only other copy.
+        assert "letter_rules.md" in file_list
+        assert "voice.md" in file_list
         assert ".env" in file_list
         assert "service_account.json" in file_list
         
@@ -124,6 +129,8 @@ def test_backup_retention_pruning(tmp_path):
     (knowledge_dir / "cv.md").write_text("CV", encoding="utf-8")
     (knowledge_dir / "persona.md").write_text("Persona", encoding="utf-8")
     (knowledge_dir / "ats_criteria.md").write_text("ATS", encoding="utf-8")
+    (knowledge_dir / "letter_rules.md").write_text("Rules Content", encoding="utf-8")
+    (knowledge_dir / "voice.md").write_text("Voice Content", encoding="utf-8")
     
     env_path = tmp_path / ".env"
     env_path.write_text("ENV", encoding="utf-8")
@@ -177,6 +184,8 @@ def test_backup_retention_keep_zero(tmp_path):
     (knowledge_dir / "cv.md").write_text("CV", encoding="utf-8")
     (knowledge_dir / "persona.md").write_text("Persona", encoding="utf-8")
     (knowledge_dir / "ats_criteria.md").write_text("ATS", encoding="utf-8")
+    (knowledge_dir / "letter_rules.md").write_text("Rules Content", encoding="utf-8")
+    (knowledge_dir / "voice.md").write_text("Voice Content", encoding="utf-8")
     
     env_path = tmp_path / ".env"
     env_path.write_text("ENV", encoding="utf-8")
@@ -222,6 +231,8 @@ def test_backup_concurrent_write_safety(tmp_path):
     (knowledge_dir / "cv.md").write_text("CV", encoding="utf-8")
     (knowledge_dir / "persona.md").write_text("Persona", encoding="utf-8")
     (knowledge_dir / "ats_criteria.md").write_text("ATS", encoding="utf-8")
+    (knowledge_dir / "letter_rules.md").write_text("Rules Content", encoding="utf-8")
+    (knowledge_dir / "voice.md").write_text("Voice Content", encoding="utf-8")
     
     env_path = tmp_path / ".env"
     env_path.write_text("ENV", encoding="utf-8")

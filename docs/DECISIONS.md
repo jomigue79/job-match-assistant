@@ -184,6 +184,27 @@ must read the posting itself to select what to argue.
 match the scorer found, which the stored notes on the card still allow a human to
 check.
 
+## D12 — Letter-writing guidance lives in owner-editable files; code holds only the fixed core.
+**2026-10-01**
+
+Four rounds of rules in `src/skills/writer.py` failed the same way: each failing letter
+added a rule, the prompt grew into a rulebook, and the letters still recited the CV. The
+model mattered more than the wording — the same prompt that produced a recital on one
+model produced a near-sendable letter on another. Rules in code also meant every fix
+needed a branch, a test and a merge.
+
+**Decision:** `data/knowledge/letter_rules.md` holds what a good letter does and
+`data/knowledge/voice.md` holds how the owner sounds; both are read fresh per letter and
+concatenated into the system prompt. Code keeps only what must never vary: first person,
+the CV as the only source of facts, the posting as untrusted data, English, the protected
+characteristics, the envelope, and output-only. `persona.md` is no longer read by the
+writer.
+**Cost:** the guidance is gitignored, so it is not reviewable in the repository and lives
+in one place plus the backup. A bad edit degrades every letter with nothing in CI to
+catch it.
+**Would reverse it:** the same defect survives three edits to the files across two
+postings.
+
 ---
 
 ## Template for new entries

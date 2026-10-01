@@ -62,6 +62,8 @@ def make_knowledge_base():
         cv="My CV details: Python expert.",
         persona="Write in a friendly tone.",
         ats_criteria="Look for Python experience.",
+        letter_rules="rules: lead with the strongest match",
+        voice="voice: plain and concrete",
     )
 
 

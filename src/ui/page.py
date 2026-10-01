@@ -7,12 +7,20 @@ from persistence import Counters, JobWithMatch
 from coordinator import RunCoordinator, RunAlreadyActiveError
 from config import get_settings
 from export import LetterPdfError, build_letter_pdf, letter_pdf_filename
+from skills.writer import WriterError
 
 from datetime import datetime, timezone
 
 # Sort floor for applied cards whose letter_created_at is None. Substituted only
 # inside the sort key so datetime is never compared against None.
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+# Shown when the writer fails: nothing was written, and the fix is usually an edit to
+# the rules or voice file rather than a code change. Distinct from a crash.
+WRITER_FAILURE_MESSAGE = (
+    "Couldn't write this letter: "
+    "the writer failed and nothing was written. Try again; if it keeps failing, edit letter_rules.md or voice.md, or change the model."
+)
 
 @dataclass(frozen=True)
 class MatchCard:
@@ -208,7 +216,8 @@ async def generate_cover_letter_handler(
     knowledge_loader,
     generating_hashes: set,
     on_success_callback=None,
-    on_error_notify_callback=None
+    on_error_notify_callback=None,
+    instruction: str = ""
 ) -> None:
     if identity_hash in generating_hashes:
         return
@@ -231,8 +240,8 @@ async def generate_cover_letter_handler(
         if not job:
             raise ValueError("No job posting found in database.")
             
-        # c. Call writer.generate
-        letter_text = await writer.generate(job, knowledge, match_result)
+        # c. Call writer.generate, passing the one-off instruction for this generation
+        letter_text = await writer.generate(job, knowledge, match_result, instruction=instruction)
         
         # d. Save cover letter
         await persistence.save_cover_letter(identity_hash, letter_text)
@@ -243,16 +252,32 @@ async def generate_cover_letter_handler(
             
     except Exception as e:
         logger.exception("Failed to generate cover letter", identity_hash=identity_hash)
+        # A WriterError means nothing was written: a refusal, not a crash.
+        if isinstance(e, WriterError):
+            message, kind = WRITER_FAILURE_MESSAGE, "warning"
+        else:
+            message, kind = f"Error generating cover letter: {e}", "negative"
+
         if on_error_notify_callback:
             try:
-                on_error_notify_callback(str(e))
+                on_error_notify_callback(message, kind)
             except RuntimeError as re:
-                logger.warning("Error callback notification raised RuntimeError (e.g. parent element deleted)", error=str(re))
+                logger.error(
+                    "Could not show the user why letter generation failed",
+                    identity_hash=identity_hash,
+                    lost_message=message,
+                    error=str(re)
+                )
         else:
             try:
-                ui.notify(f"Error generating cover letter: {e}", type="negative", position="bottom-right")
+                ui.notify(message, type=kind, position="bottom-right")
             except RuntimeError as re:
-                logger.warning("Default notification raised RuntimeError (e.g. parent element deleted)", error=str(re))
+                logger.error(
+                    "Could not show the user why letter generation failed",
+                    identity_hash=identity_hash,
+                    lost_message=message,
+                    error=str(re)
+                )
             
     finally:
         generating_hashes.discard(identity_hash)
@@ -588,13 +613,21 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         dialog.on_value_change(lambda e: dialog.clear() if not e.value else None)
         dialog.open()
 
-    def handle_error_notify(msg: str):
+    def handle_error_notify(message: str, kind: str = "negative"):
         try:
-            ui.notify(f"Error generating cover letter: {msg}", type="negative", position="bottom-right")
+            with notify_host:
+                ui.notify(message, type=kind, position="bottom-right")
         except RuntimeError as re:
-            logger.warning("Could not display UI notification because parent element was deleted", error=str(re))
+            logger.error(
+                "Could not display UI notification because parent element was deleted",
+                lost_message=message,
+                error=str(re)
+            )
 
-    async def generate_letter(m: MatchCard):
+    async def generate_letter(m: MatchCard, instruction_field=None):
+        # Read the field now: the card it lives in is rebuilt the moment generation
+        # starts, so its value cannot be read afterwards.
+        instruction = (instruction_field.value or "") if instruction_field is not None else ""
         await generate_cover_letter_handler(
             identity_hash=m.identity_hash,
             persistence=persistence,
@@ -602,7 +635,8 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
             knowledge_loader=knowledge_loader,
             generating_hashes=generating_hashes,
             on_success_callback=refresh,
-            on_error_notify_callback=handle_error_notify
+            on_error_notify_callback=handle_error_notify,
+            instruction=instruction
         )
 
     async def transition_to_applied(m: MatchCard):
@@ -726,6 +760,10 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
         # Stable parent for dialogs. rebuild_cards never clears it, so a dialog built
         # inside it cannot be deleted by a rebuild. See show_letter_dialog.
         dialog_host = ui.element("div").classes("hidden")
+        # Same reason, for notifications: a click handler runs in the sender's slot, and
+        # generation rebuilds the card it was sent from, so a notification raised after
+        # that rebuild has no slot to attach to. This host is never rebuilt.
+        notify_host = ui.element("div").classes("hidden")
 
     last_cards_signature = ""
 
@@ -801,6 +839,9 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
             if mode == "active":
                 if not m.has_letter:
                     btn_label = "Generating..." if is_generating else "Write Letter"
+                    instruction_field = ui.input(placeholder="Instruction for the next generation only (optional)").classes(
+                        "w-full mt-2"
+                    ).props('outlined dense input-class="text-xs"')
                     with ui.row().classes("w-full justify-between items-center mt-2 border-t border-white/5 pt-2"):
                         reject_btn = ui.button("Reject", on_click=lambda m=m: transition_to_rejected(m))
                         reject_btn.classes("bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-500/20")
@@ -809,7 +850,10 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                             apply_btn = ui.button("Mark Applied", on_click=lambda m=m: transition_to_applied(m))
                             apply_btn.classes("bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md")
                             
-                            btn = ui.button(btn_label, on_click=lambda m=m: generate_letter(m))
+                            btn = ui.button(
+                                btn_label,
+                                on_click=lambda m=m, f=instruction_field: generate_letter(m, f)
+                            )
                             btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-md disabled:opacity-50")
                             if is_generating:
                                 btn.disable()
@@ -819,6 +863,9 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                         ui.label(f"Cover Letter (v{m.letter_version})").classes("font-semibold text-indigo-300")
                         ui.label(f"Created: {m.letter_created_at.strftime('%Y-%m-%d %H:%M') if m.letter_created_at else ''}").classes("font-mono")
 
+                    instruction_field = ui.input(placeholder="Instruction for the next generation only (optional)").classes(
+                        "w-full mt-2"
+                    ).props('outlined dense input-class="text-xs"')
                     with ui.row().classes("w-full justify-between items-center mt-2 border-t border-white/5 pt-2"):
                         reject_btn = ui.button("Reject", on_click=lambda m=m: transition_to_rejected(m))
                         reject_btn.classes("bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-500/20")
@@ -831,7 +878,10 @@ def build_ui(coordinator: RunCoordinator, persistence, writer, knowledge_loader)
                             view_btn.classes("bg-slate-700 hover:bg-slate-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg")
 
                             reg_btn_label = "Generating..." if is_generating else "Regenerate"
-                            reg_btn = ui.button(reg_btn_label, on_click=lambda m=m: generate_letter(m))
+                            reg_btn = ui.button(
+                                reg_btn_label,
+                                on_click=lambda m=m, f=instruction_field: generate_letter(m, f)
+                            )
                             reg_btn.classes("bg-indigo-650 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50")
                             if is_generating:
                                 reg_btn.disable()

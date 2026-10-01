@@ -32,7 +32,11 @@ def base_env(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "main-model")
     monkeypatch.setenv("LLM_API_KEY", MAIN_KEY)
-    for name in ["LLM_BASE_URL", "LLM_REASONING", "LLM_REASONING_EFFORT"] + WRITER_VARS:
+    # Set explicitly, not deleted: pydantic-settings falls back to the .env file, and
+    # the live .env sets LLM_REASONING. A deleted variable is not an absent one.
+    monkeypatch.setenv("LLM_REASONING", "false")
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "medium")
+    for name in ["LLM_BASE_URL"] + WRITER_VARS:
         monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()
     yield

@@ -84,7 +84,7 @@ class FailingScorer:
 
 class FakeKnowledgeLoader:
     def load(self):
-        return KnowledgeBase(cv="cv", persona="persona", ats_criteria="criteria")
+        return KnowledgeBase(cv="cv", persona="persona", ats_criteria="criteria", letter_rules="rules: lead with the strongest match", voice="voice: plain and concrete")
 
 
 class MissingKnowledgeLoader:

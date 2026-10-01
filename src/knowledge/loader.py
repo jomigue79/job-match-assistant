@@ -20,10 +20,15 @@ class KnowledgeBase(BaseModel):
     cv: str
     persona: str
     ats_criteria: str
+    # Owner-editable writing guidance. The writer reads these; the scorer does not.
+    letter_rules: str
+    voice: str
 
 class KnowledgeLoader:
     """
-    Reader component loading cv, persona, and ats rubrics fresh from file paths.
+    Reader component loading the CV, the writing guidance and the ats rubric fresh
+    from file paths. persona.md is still read: the writer no longer uses it, and
+    dropping the field is a separate cleanup.
     """
     def __init__(self, knowledge_dir: str):
         self.knowledge_dir = Path(knowledge_dir)
@@ -38,13 +43,16 @@ class KnowledgeLoader:
             "cv": self.knowledge_dir / "cv.md",
             "persona": self.knowledge_dir / "persona.md",
             "ats_criteria": self.knowledge_dir / "ats_criteria.md",
+            "letter_rules": self.knowledge_dir / "letter_rules.md",
+            "voice": self.knowledge_dir / "voice.md",
         }
 
         contents = {}
         for name, path in files.items():
             if not path.exists():
                 raise KnowledgeLoadError(
-                    f"Missing required knowledge file: {path.name} at {path.absolute()}"
+                    f"Missing required knowledge file: {path.name} at {path.absolute()}. "
+                    f"Copy {path.name}.example to {path.name} and edit it."
                 )
 
             try:
@@ -89,5 +97,7 @@ class KnowledgeLoader:
         return KnowledgeBase(
             cv=contents["cv"],
             persona=contents["persona"],
-            ats_criteria=contents["ats_criteria"]
+            ats_criteria=contents["ats_criteria"],
+            letter_rules=contents["letter_rules"],
+            voice=contents["voice"]
         )
