@@ -89,6 +89,8 @@ def make_knowledge_base():
         cv="My CV details.",
         persona="Write in a friendly tone.",
         ats_criteria="Evaluation criteria.",
+        letter_rules="rules: lead with the strongest match",
+        voice="voice: plain and concrete",
     )
 
 

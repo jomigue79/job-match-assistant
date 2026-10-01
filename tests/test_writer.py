@@ -42,7 +42,9 @@ def make_knowledge_base():
     return KnowledgeBase(
         cv="My CV details: Python expert with 10 years experience.",
         persona="Write in a friendly tone and sardonic style.",
-        ats_criteria="Look for Python experience."
+        ats_criteria="Look for Python experience.",
+        letter_rules="rules: lead with the strongest match",
+        voice="voice: plain and concrete",
     )
 
 def make_match_result():
@@ -84,9 +86,13 @@ async def test_writer_prompt_content_and_request_shape():
     req = fake_client.last_request
     assert req is not None
 
-    # Assert CV and Persona are in the user prompt
+    # The CV is in the user prompt; the rules and voice are in the system prompt;
+    # the persona reaches neither - the writer stopped reading it.
     assert kb.cv in req.user_prompt
-    assert kb.persona in req.user_prompt
+    assert kb.letter_rules in req.system_prompt
+    assert kb.voice in req.system_prompt
+    assert kb.persona not in req.user_prompt
+    assert kb.persona not in req.system_prompt
 
     # Assert ats_criteria is NOT in the prompts (R-3 Boundary)
     assert kb.ats_criteria not in req.user_prompt
@@ -107,9 +113,9 @@ async def test_writer_prompt_content_and_request_shape():
     assert "SCORING-NOTE-SENTINEL-9f2b41" not in sentinel_client.last_request.user_prompt
     assert "SCORING-NOTE-SENTINEL-9f2b41" not in sentinel_client.last_request.system_prompt
 
-    # Assert anti-fabrication instruction is in the system prompt
-    assert "ANTI-FABRICATION RULE" in req.system_prompt
-    assert "ONLY assert qualifications" in req.system_prompt
+    # The CV is the only source of facts; the guidance files explicitly are not
+    assert "THE ONLY SOURCE OF FACTS" in req.system_prompt
+    assert "Never imply I have anything my CV does not show" in req.system_prompt
 
     # Assert request shape
     assert req.temperature == 0.7

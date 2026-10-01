@@ -47,5 +47,27 @@ No change: OpenAI gpt-6.1-sol via LLM_REASONING=true. The writer's temperature l
 ## Acceptance
 The owner reads the next real letter. If it misses, the fix is an edit to letter_rules.md or voice.md, not a new rule in code.
 
+## Notes from implementation
+
+- **Length lives in the rules file.** `letter_rules.md` rule 8 sets the 200 to 300 word
+  body. Code states no length: that was the point of moving the guidance out.
+- **A reasoning model lifts the token ceiling to 8000.** With `LLM_REASONING=true` the
+  adapter sends `max_completion_tokens = max(request.max_tokens, 8000)` and omits
+  temperature, so the writer's 0.7 literal is inert and a letter costs more than it did
+  on Gemini. Nothing enforces the word target except the rules file.
+- **persona.md is still loaded** by `KnowledgeLoader` and still required at startup; the
+  writer simply no longer reads it, and `persona.md.example` stays in the repository so a
+  fresh clone can create the file. Removing the field is backlog.
+- **The backup covers the new files.** `scripts/backup.py` zips `letter_rules.md` and
+  `voice.md` beside the CV: they are gitignored, so the backup is their only other copy.
+
+## Backlog
+
+- **Remove `persona` from `KnowledgeBase` and stop loading `persona.md`**, with
+  `persona.md.example` deleted at the same time. Touches the loader, both production call
+  sites and every test fixture that constructs a `KnowledgeBase`.
+- **The one-off instruction field is cleared by a card rebuild**, which generation itself
+  triggers. Acceptable for a one-off note; worth revisiting if it proves annoying.
+
 ## Decision to record
-D12 — Letter-writing guidance lives in owner-editable files (letter_rules.md, voice.md); code holds only the fixed core. Reverse if: edits to the files cannot fix a recurring failure that a code rule demonstrably fixes.
+D12 — Letter-writing guidance lives in owner-editable files (letter_rules.md, voice.md); code holds only the fixed core. Reverse if the same defect survives three edits to the files across two postings. Filed in docs/DECISIONS.md.

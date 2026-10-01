@@ -92,7 +92,9 @@ class FakeKnowledgeLoader:
         return KnowledgeBase(
             cv="Fake CV",
             persona="Fake Persona",
-            ats_criteria="Fake ATS Criteria"
+            ats_criteria="Fake ATS Criteria",
+            letter_rules="rules: lead with the strongest match",
+            voice="voice: plain and concrete",
         )
 
 def build_test_job_posting(company: str, title: str, location: str, url: str) -> JobPosting:

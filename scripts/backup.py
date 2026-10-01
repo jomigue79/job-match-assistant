@@ -36,7 +36,7 @@ def run_backup(
     if not os.path.exists(db_path):
         missing.append(f"Database file: {db_path}")
     k_dir = Path(knowledge_dir)
-    for k_file in ["cv.md", "persona.md", "ats_criteria.md"]:
+    for k_file in ["cv.md", "persona.md", "ats_criteria.md", "letter_rules.md", "voice.md"]:
         kp = k_dir / k_file
         if not kp.exists():
             missing.append(f"Knowledge file: {kp}")
@@ -88,6 +88,9 @@ def run_backup(
             zip_file.write(k_dir / "cv.md", "cv.md")
             zip_file.write(k_dir / "persona.md", "persona.md")
             zip_file.write(k_dir / "ats_criteria.md", "ats_criteria.md")
+            # Owner-editable and gitignored: the backup is their only other copy.
+            zip_file.write(k_dir / "letter_rules.md", "letter_rules.md")
+            zip_file.write(k_dir / "voice.md", "voice.md")
             # Write env file
             zip_file.write(env_path, ".env")
             # Write service account
@@ -141,6 +144,8 @@ def run_backup(
     print("  - cv.md")
     print("  - persona.md")
     print("  - ats_criteria.md")
+    print("  - letter_rules.md")
+    print("  - voice.md")
     print("  - .env")
     print("  - service_account.json")
     print(f"Pruned Backups: {pruned_count}")

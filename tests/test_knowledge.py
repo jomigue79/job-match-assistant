@@ -7,10 +7,14 @@ def test_knowledge_loader_success(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("Test CV Content", encoding="utf-8")
     persona_file.write_text("Test Persona Content", encoding="utf-8")
     ats_file.write_text("Test ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
     kb = loader.load()
@@ -23,10 +27,14 @@ def test_knowledge_loader_reads_fresh(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("Original CV Content", encoding="utf-8")
     persona_file.write_text("Test Persona Content", encoding="utf-8")
     ats_file.write_text("Test ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
     kb1 = loader.load()
@@ -43,10 +51,14 @@ def test_knowledge_base_immutability(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("Test CV Content", encoding="utf-8")
     persona_file.write_text("Test Persona Content", encoding="utf-8")
     ats_file.write_text("Test ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
     kb = loader.load()
@@ -68,10 +80,14 @@ def test_knowledge_loader_empty_file(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("   \n   ", encoding="utf-8")  # Empty (only whitespace)
     persona_file.write_text("Test Persona Content", encoding="utf-8")
     ats_file.write_text("Test ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
     with pytest.raises(KnowledgeLoadError) as exc_info:
@@ -83,10 +99,14 @@ def test_knowledge_loader_logs_metadata(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("Logged CV Content", encoding="utf-8")
     persona_file.write_text("Logged Persona Content", encoding="utf-8")
     ats_file.write_text("Logged ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
 
@@ -95,7 +115,8 @@ def test_knowledge_loader_logs_metadata(tmp_path):
 
     # We expect 3 loader logs (one for each file)
     loader_logs = [log for log in captured if log.get("event") == "Loaded knowledge layer file"]
-    assert len(loader_logs) == 3
+    # Five knowledge files now: cv, persona, ats_criteria, letter_rules, voice.
+    assert len(loader_logs) == 5
 
     # Check CV file load metadata
     cv_log = next(log for log in loader_logs if log.get("file_name") == "cv.md")
@@ -108,10 +129,14 @@ def test_knowledge_loader_placeholder_warning(tmp_path):
     cv_file = tmp_path / "cv.md"
     persona_file = tmp_path / "persona.md"
     ats_file = tmp_path / "ats_criteria.md"
+    rules_file = tmp_path / "letter_rules.md"
+    voice_file = tmp_path / "voice.md"
 
     cv_file.write_text("This contains a <placeholder_here> angle-bracket text.", encoding="utf-8")
     persona_file.write_text("Test Persona Content", encoding="utf-8")
     ats_file.write_text("Test ATS Content", encoding="utf-8")
+    rules_file.write_text("Test Rules Content", encoding="utf-8")
+    voice_file.write_text("Test Voice Content", encoding="utf-8")
 
     loader = KnowledgeLoader(str(tmp_path))
 
