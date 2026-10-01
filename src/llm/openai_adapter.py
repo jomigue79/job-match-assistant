@@ -2,6 +2,11 @@ import openai
 from .types import LLMProfile, LLMRequest, LLMResponse, LLMUsage, TransientLLMError, PermanentLLMError
 from .adapter import register_provider
 
+# A reasoning model spends part of its completion budget on hidden reasoning, so a
+# cap sized for prose can return an empty message. This floor applies only to the
+# reasoning shape; the request's own value wins when it is larger.
+REASONING_TOKEN_FLOOR = 8000
+
 class OpenAIAdapter:
     """
     OpenAI implementation of ProviderAdapter mapping completion requests and handling SDK errors.
@@ -29,9 +34,17 @@ class OpenAIAdapter:
         kwargs = {
             "model": self.model,
             "messages": messages,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
         }
+
+        if self.profile.reasoning:
+            # max_tokens and any non-default temperature are rejected outright:
+            # "Use 'max_completion_tokens' instead", "Only the default (1) value is
+            # supported". Temperature is omitted rather than set to 1.
+            kwargs["max_completion_tokens"] = max(request.max_tokens, REASONING_TOKEN_FLOOR)
+            kwargs["reasoning_effort"] = request.reasoning_effort or self.profile.reasoning_effort
+        else:
+            kwargs["max_tokens"] = request.max_tokens
+            kwargs["temperature"] = request.temperature
         
         if request.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
@@ -41,16 +54,24 @@ class OpenAIAdapter:
             text = chat_completion.choices[0].message.content or ""
             
             raw_usage = chat_completion.usage
+            reasoning_tokens = None
             if raw_usage:
                 input_tokens = raw_usage.prompt_tokens
                 output_tokens = raw_usage.completion_tokens
+                # Absent on ordinary chat models and on older SDKs: read defensively.
+                details = getattr(raw_usage, "completion_tokens_details", None)
+                reasoning_tokens = getattr(details, "reasoning_tokens", None) if details is not None else None
             else:
                 input_tokens = 0
                 output_tokens = 0
-                
+
             return LLMResponse(
                 text=text,
-                usage=LLMUsage(input_tokens=input_tokens, output_tokens=output_tokens),
+                usage=LLMUsage(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    reasoning_tokens=reasoning_tokens
+                ),
                 model=self.model
             )
             

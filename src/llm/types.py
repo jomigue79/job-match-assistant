@@ -13,6 +13,10 @@ class LLMRequest(BaseModel):
     max_tokens: int
     temperature: float
     json_mode: bool = False
+    # Per-skill override for a reasoning model. None takes the profile's effort.
+    # The scorer extracts five numbers from a rubric and asks for low; the writer
+    # leaves it unset. Ignored entirely when the profile is not a reasoning one.
+    reasoning_effort: Optional[str] = None
 
 class LLMProfile(BaseModel):
     """
@@ -28,6 +32,11 @@ class LLMProfile(BaseModel):
     base_url: Optional[str] = None
     input_token_rate_usd: float
     output_token_rate_usd: float
+    # Reasoning models reject max_tokens and any non-default temperature, so the
+    # adapter sends a different request shape. False keeps the ordinary shape, which
+    # is what Gemini and ordinary OpenAI chat models need.
+    reasoning: bool = False
+    reasoning_effort: str = "medium"
 
 class LLMUsage(BaseModel):
     """
@@ -37,6 +46,9 @@ class LLMUsage(BaseModel):
 
     input_tokens: int
     output_tokens: int
+    # Already counted inside output_tokens by the provider: reported for visibility,
+    # never added to a cost sum, or reasoning would be charged twice.
+    reasoning_tokens: Optional[int] = None
 
 class LLMResponse(BaseModel):
     """

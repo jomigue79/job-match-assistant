@@ -126,7 +126,10 @@ class Scorer:
             user_prompt=user_prompt,
             max_tokens=1000,
             temperature=0.0,
-            json_mode=True
+            json_mode=True,
+            # Reading five values off a rubric needs no deliberation, and effort is
+            # billed as output. Ignored unless the model is a reasoning one.
+            reasoning_effort="low"
         )
 
         response = await self.llm_client.complete(request, cost_accumulator=cost_accumulator)

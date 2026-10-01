@@ -53,6 +53,7 @@ class LLMClient:
                         "LLM complete success",
                         provider=getattr(self.adapter, "provider_name", None),
                         model=response.model,
+                        reasoning_tokens=response.usage.reasoning_tokens,
                         input_tokens=response.usage.input_tokens,
                         output_tokens=response.usage.output_tokens,
                         latency_seconds=latency,

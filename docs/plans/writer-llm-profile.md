@@ -29,6 +29,29 @@ The scorer runs on every scraped job and must stay on a cheap model. The writer 
 
 LLMProfile lives in src/llm/types.py, with deferred imports inside the two Settings methods: llm.client already imports config, so a module-level import of llm from config would close a cycle. observability/metrics.py:30-42 dodges the same cycle the same way.
 
+### Known costs
+
+- **Reasoning models run at temperature 1.** The API rejects any other value, so the
+  scorer's 0.0 (scorer.py:128) is inert on such a model and dimension values vary more
+  between scorings of the same job. The computed score is still arithmetic in code, so
+  the sum cannot drift, but the inputs to it can. Measured in the follow-up re-score
+  check rather than assumed.
+- **LLM spend is not covered by RUN_BUDGET_CAP_USD.** The pre-run projection in
+  run_coordinator covers Apify only, and a reasoning model with the 8000-token
+  completion floor costs an order of magnitude more per scored job than Gemini did.
+  Nothing refuses a run on that basis. Backlog.
+
+### Backlog
+
+- **A per-job error record, and n_errors where the user can see it.** A scoring failure
+  is already caught per job and the run already continues (run_coordinator.py:273), but
+  the job stays `scraped` with nothing recorded, and n_errors is persisted and never
+  displayed. Needs two jobs columns and a migration numbered after the two-step
+  writer's, since that branch already holds the v2 upgrade and the live database is
+  already at version 2.
+- **LLM cost inside the run budget cap**, so a run can be refused on projected LLM
+  spend and not only on projected Apify spend.
+
 ## Out of scope
 The two-step writer (next plan). Temperature (stays hardcoded per skill for now). Any scorer change. No new dependency.
 
