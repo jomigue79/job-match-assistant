@@ -5,7 +5,7 @@ from typing import Optional
 
 from config import get_settings
 from observability import get_logger, CostAccumulator
-from .types import LLMRequest, LLMResponse, LLMUsage, LLMError, TransientLLMError, PermanentLLMError
+from .types import LLMProfile, LLMRequest, LLMResponse, LLMUsage, LLMError, TransientLLMError, PermanentLLMError
 from .adapter import ProviderAdapter, get_adapter
 
 logger = get_logger("llm_client")
@@ -51,6 +51,7 @@ class LLMClient:
                     # Structured log ONLY metadata, never prompt or completion text (privacy guard)
                     logger.info(
                         "LLM complete success",
+                        provider=getattr(self.adapter, "provider_name", None),
                         model=response.model,
                         input_tokens=response.usage.input_tokens,
                         output_tokens=response.usage.output_tokens,
@@ -72,6 +73,8 @@ class LLMClient:
                     latency = time.perf_counter() - start_time
                     logger.warning(
                         "LLM attempt timeout",
+                        provider=getattr(self.adapter, "provider_name", None),
+                        model=getattr(self.adapter, "model", None),
                         attempt=attempt,
                         timeout_seconds=self.timeout_seconds,
                         latency_seconds=latency
@@ -83,6 +86,8 @@ class LLMClient:
                     latency = time.perf_counter() - start_time
                     logger.warning(
                         "LLM attempt transient failure",
+                        provider=getattr(self.adapter, "provider_name", None),
+                        model=getattr(self.adapter, "model", None),
                         attempt=attempt,
                         error=str(e),
                         latency_seconds=latency
@@ -94,6 +99,8 @@ class LLMClient:
                     latency = time.perf_counter() - start_time
                     logger.error(
                         "LLM attempt permanent failure",
+                        provider=getattr(self.adapter, "provider_name", None),
+                        model=getattr(self.adapter, "model", None),
                         attempt=attempt,
                         error=str(e),
                         latency_seconds=latency
@@ -116,12 +123,18 @@ class LLMClient:
                 attempt += 1
 
 
-def build_llm_client() -> LLMClient:
+def build_llm_client(profile: Optional[LLMProfile] = None) -> LLMClient:
     """
     Factory constructing an LLMClient instance wired from configuration.
+
+    profile=None means the main profile, so every existing caller keeps its
+    behaviour. Pass settings.writer_llm_profile() for a client on the writer's
+    provider and model. Concurrency, retries and the attempt timeout stay global.
     """
     settings = get_settings()
-    adapter = get_adapter(settings.llm_provider)
+    if profile is None:
+        profile = settings.main_llm_profile()
+    adapter = get_adapter(profile.provider, profile)
     
     return LLMClient(
         adapter=adapter,

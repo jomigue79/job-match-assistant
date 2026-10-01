@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from pydantic import Field, SecretStr, field_validator, ValidationError, ValidationInfo
+from pydantic import Field, SecretStr, field_validator, model_validator, ValidationError, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class ConfigurationError(ValueError):
@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     llm_base_url: str | None = Field(default=None, validation_alias="LLM_BASE_URL")
     llm_max_retries: int = Field(default=3, validation_alias="LLM_MAX_RETRIES")
     llm_timeout_seconds: float = Field(default=60.0, validation_alias="LLM_TIMEOUT_SECONDS")
+
+    # Writer LLM profile (all optional). The writer runs once per letter; the scorer runs
+    # on every scraped job. Each unset field falls back to its LLM_* counterpart, so an
+    # empty block keeps one provider for both skills.
+    writer_llm_provider: str | None = Field(default=None, validation_alias="WRITER_LLM_PROVIDER")
+    writer_llm_model: str | None = Field(default=None, validation_alias="WRITER_LLM_MODEL")
+    writer_llm_api_key: SecretStr | None = Field(default=None, validation_alias="WRITER_LLM_API_KEY")
+    writer_llm_base_url: str | None = Field(default=None, validation_alias="WRITER_LLM_BASE_URL")
+    writer_llm_input_token_rate_usd: float | None = Field(default=None, validation_alias="WRITER_LLM_INPUT_TOKEN_RATE_USD")
+    writer_llm_output_token_rate_usd: float | None = Field(default=None, validation_alias="WRITER_LLM_OUTPUT_TOKEN_RATE_USD")
     
     # Scoring Config
     score_threshold: int = Field(default=70, validation_alias="SCORE_THRESHOLD")
@@ -129,10 +139,96 @@ class Settings(BaseSettings):
             raise ValueError("run_budget_cap_usd must not be negative")
         return v
 
+    @model_validator(mode="after")
+    def validate_llm_profiles(self):
+        if self.writer_llm_provider and self.writer_llm_provider != self.llm_provider and self.writer_llm_api_key is None:
+            raise ValueError(
+                f"WRITER_LLM_API_KEY is required: WRITER_LLM_PROVIDER is "
+                f"'{self.writer_llm_provider}' but LLM_PROVIDER is '{self.llm_provider}', "
+                f"and a key issued for one provider does not work on another"
+            )
+        writer_provider = self.writer_llm_provider or self.llm_provider
+        if self.writer_llm_base_url and writer_provider == "google":
+            raise ValueError(
+                "WRITER_LLM_BASE_URL is set but the writer provider is 'google', "
+                "which ignores it; use LLM_PROVIDER/WRITER_LLM_PROVIDER 'openai' for an "
+                "OpenAI-compatible endpoint, or remove WRITER_LLM_BASE_URL"
+            )
+        if self.llm_base_url and self.llm_provider == "google":
+            raise ValueError(
+                "LLM_BASE_URL is set but LLM_PROVIDER is 'google', which ignores it; "
+                "use provider 'openai' for an OpenAI-compatible endpoint, or remove LLM_BASE_URL"
+            )
+        return self
+
+    def main_llm_profile(self):
+        """The profile the scorer and every other skill call on."""
+        # Imported here, not at module level: llm.client imports config, so a
+        # module-level import of llm from config would close an import cycle.
+        from llm.types import LLMProfile
+        return LLMProfile(
+            provider=self.llm_provider,
+            model=self.llm_model,
+            api_key=self.llm_api_key,
+            base_url=self.llm_base_url,
+            input_token_rate_usd=self.llm_input_token_rate_usd,
+            output_token_rate_usd=self.llm_output_token_rate_usd,
+        )
+
+    def writer_llm_profile(self):
+        """
+        The profile the writer calls on: each WRITER_LLM_* field, falling back to its
+        LLM_* counterpart. base_url is the one exception - a writer naming its own
+        provider does not inherit the main endpoint, which belongs to another API.
+        """
+        from llm.types import LLMProfile
+        inherits_base_url = self.writer_llm_provider is None
+        return LLMProfile(
+            provider=self.writer_llm_provider or self.llm_provider,
+            model=self.writer_llm_model or self.llm_model,
+            api_key=self.writer_llm_api_key or self.llm_api_key,
+            base_url=self.writer_llm_base_url or (self.llm_base_url if inherits_base_url else None),
+            input_token_rate_usd=(
+                self.writer_llm_input_token_rate_usd
+                if self.writer_llm_input_token_rate_usd is not None
+                else self.llm_input_token_rate_usd
+            ),
+            output_token_rate_usd=(
+                self.writer_llm_output_token_rate_usd
+                if self.writer_llm_output_token_rate_usd is not None
+                else self.llm_output_token_rate_usd
+            ),
+        )
+
     @property
     def scraper_queries(self) -> list[str]:
         """SCRAPER_QUERY as a list of job titles, already stripped and validated."""
         return self.scraper_query.split(",")
+
+def _warn_on_inherited_writer_rates(settings: "Settings") -> None:
+    """
+    A writer on another provider or model with inherited rates prices its letters at the
+    scoring model's rate. No validation can infer the right number, so this warns and
+    leaves the run alone.
+    """
+    main = settings.main_llm_profile()
+    writer = settings.writer_llm_profile()
+    if (writer.provider, writer.model) == (main.provider, main.model):
+        return
+    if settings.writer_llm_input_token_rate_usd is not None or settings.writer_llm_output_token_rate_usd is not None:
+        return
+    try:
+        from observability import get_logger
+        get_logger("config").warning(
+            "Writer LLM token rates are inherited from the scoring model; the letter cost estimate will be wrong",
+            writer_provider=writer.provider,
+            writer_model=writer.model,
+            main_provider=main.provider,
+            main_model=main.model,
+        )
+    except Exception:
+        # Configuration must load even when logging is unavailable.
+        pass
 
 @lru_cache()
 def get_settings(_env_file: str | None = ".env") -> Settings:
@@ -150,7 +246,9 @@ def get_settings(_env_file: str | None = ".env") -> Settings:
         # Ensure directories exist
         for d in [settings.raw_scrape_dir, settings.knowledge_dir]:
             Path(d).mkdir(parents=True, exist_ok=True)
-            
+
+        _warn_on_inherited_writer_rates(settings)
+
         return settings
     except ValidationError as e:
         missing_keys = []

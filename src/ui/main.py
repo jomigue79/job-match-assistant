@@ -19,8 +19,14 @@ def main():
     
     from skills.writer import Writer
     from knowledge import KnowledgeLoader
+    from llm import build_llm_client
     
-    writer = Writer(candidate_name=settings.candidate_name)
+    # The writer calls on its own profile, which falls back to the main one when no
+    # WRITER_LLM_* is set. The scorer keeps the main profile (run_coordinator).
+    writer = Writer(
+        build_llm_client(settings.writer_llm_profile()),
+        candidate_name=settings.candidate_name
+    )
     knowledge_loader = KnowledgeLoader(settings.knowledge_dir)
     
     build_ui(coordinator, persistence_service, writer, knowledge_loader)

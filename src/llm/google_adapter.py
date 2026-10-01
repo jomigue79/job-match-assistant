@@ -1,7 +1,6 @@
 from google import genai
 from google.genai import types, errors
-from config import get_settings
-from .types import LLMRequest, LLMResponse, LLMUsage, TransientLLMError, PermanentLLMError
+from .types import LLMProfile, LLMRequest, LLMResponse, LLMUsage, TransientLLMError, PermanentLLMError
 from .adapter import register_provider
 
 class GoogleAdapter:
@@ -10,14 +9,16 @@ class GoogleAdapter:
     """
     provider_name = "google"
 
-    def __init__(self):
-        settings = get_settings()
-        api_key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
-        
+    def __init__(self, profile: LLMProfile):
+        # The profile is the only source of credentials and model. base_url is not read
+        # here: this SDK has no equivalent, and settings reject one for google.
+        self.profile = profile
+        api_key = profile.api_key.get_secret_value() if profile.api_key else None
+
         self.client = genai.Client(
             api_key=api_key
         )
-        self.model = settings.llm_model
+        self.model = profile.model
 
     async def _call(self, request: LLMRequest) -> LLMResponse:
         config_kwargs = {

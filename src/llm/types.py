@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 class LLMRequest(BaseModel):
     """
@@ -11,6 +13,21 @@ class LLMRequest(BaseModel):
     max_tokens: int
     temperature: float
     json_mode: bool = False
+
+class LLMProfile(BaseModel):
+    """
+    One provider's complete call configuration: credentials, endpoint, model, and the
+    token rates its cost estimate uses. Adapters receive a profile instead of reading
+    settings, so the writer and the scorer can run on different providers and models.
+    """
+    model_config = ConfigDict(frozen=True)
+
+    provider: str
+    model: str
+    api_key: Optional[SecretStr] = None
+    base_url: Optional[str] = None
+    input_token_rate_usd: float
+    output_token_rate_usd: float
 
 class LLMUsage(BaseModel):
     """
