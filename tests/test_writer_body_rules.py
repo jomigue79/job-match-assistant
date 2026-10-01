@@ -47,8 +47,8 @@ def test_rule_seven_sits_between_the_envelope_and_the_output_format():
 
 def test_rule_seven_names_every_requirement():
     for phrase in [
-        "Open on your strongest evidence",
-        "Select by the posting's emphasis",
+        "Open with a thesis",
+        "Exactly two arguments",
         "Name what the CV names",
         "Attach the result the CV states",
         "Use your own words, not the posting's",
@@ -108,13 +108,38 @@ def test_output_format_forbids_emitting_the_skeleton():
     assert "Never output the bracketed labels from rule 7's shape" in SYSTEM_PROMPT
 
 
+def test_rule_seven_opens_with_a_thesis():
+    assert "Open with a thesis" in SYSTEM_PROMPT
+    assert "its own paragraph of one or two sentences" in SYSTEM_PROMPT
+    assert "The thesis previews; it asserts nothing the two evidence paragraphs do not prove." in SYSTEM_PROMPT
+
+
+def test_rule_seven_requires_exactly_two_arguments():
+    """One argument then CV recital: (b) allowed "one or two" and the model took one."""
+    assert "Exactly two arguments" in SYSTEM_PROMPT
+    assert "exactly two evidence paragraphs, one per requirement" in SYSTEM_PROMPT
+    assert "never add another CV item" in SYSTEM_PROMPT
+
+
+def test_partial_use_rule_forbids_reproducing_a_cv_list():
+    """A CV line bundling several methods was reproduced whole, defeating (h)."""
+    assert "j) Partial use." in SYSTEM_PROMPT
+    assert "Never reproduce a CV line's list" in SYSTEM_PROMPT
+
+
+def test_reuse_rule_permits_the_role_title():
+    """(a) lets the title appear in the thesis, so (e) names the exception at the point of use."""
+    assert "other than the role's title, which (a) permits" in SYSTEM_PROMPT
+
+
 def test_rule_seven_has_methods_and_tenure_items():
     seven = SYSTEM_PROMPT.index("7. WHAT THE BODY MUST DO:")
     g = SYSTEM_PROMPT.index("g) Close short.")
     h = SYSTEM_PROMPT.index("h) Methods.")
     i = SYSTEM_PROMPT.index("i) Tenure.")
+    j = SYSTEM_PROMPT.index("j) Partial use.")
     eight = SYSTEM_PROMPT.index("8. OUTPUT FORMAT:")
-    assert seven < g < h < i < eight
+    assert seven < g < h < i < j < eight
 
 
 def test_methods_rule_requires_the_posting_to_ask():

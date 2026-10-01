@@ -15,7 +15,7 @@
 - <add your own>
 
 ## Structure & length
-<e.g. 3 short paragraphs, max ~250 words; open with a specific hook tied to the role>
+<e.g. plain and concrete; short sentences; no long multi-clause sentences>
 
 > Letter structure is set by the writer's prompt in src/skills/writer.py - the
 > salutation, what the body must do, the gap rule and the sign-off. Describe voice

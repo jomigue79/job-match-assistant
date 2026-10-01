@@ -238,3 +238,39 @@ Scope: writer.py stops interpolating match_result.match_reasons. The generate() 
 - The methodology named is the one the posting asks for.
 - No gap sentence (the posting marks nothing as required).
 - Closing restates no posting responsibility.
+
+## Addendum 2 — structure: thesis, two arguments, close
+
+### Findings (reference posting, letter regenerated after Addendum 1)
+Passed: tenure attribution, no false gap, short close.
+Failed:
+1. One argument, then recital. The first paragraph argued the posting's most emphasised requirement; the rest followed CV order. Rule 7(b) allowed "one or two" requirements; the model took one and filled the word count with the CV.
+2. The second most emphasised requirement received no paragraph, although the CV evidences it with named counterparties.
+3. A CV line bundling a governance framework, risk logs, stakeholder alignment, documentation and agile methods was reproduced whole, defeating 7(h).
+
+### Decisions (user, 2026-10-01)
+- Exactly two arguments, one paragraph each.
+- Body length stays 200 to 300 words.
+- The letter opens with intention, not an example: a short thesis paragraph that names the role and previews the two arguments.
+- Methods and certifications appear only if the posting asks for them and the CV evidences them (7(h), unchanged).
+- The persona's paragraph rules and its sentence-length target yield to rule 7. Section 3B's 30/70 split and three-sentence ceiling are replaced by a line pointing at rule 7, and the 8.7-word average becomes roughly 13 to 18 words with a 25-word ceiling — at 8.7 words a four-paragraph letter cannot reach 200. The persona's pivot pattern is kept with ranges of 5—10 and 15—25 words; its list of things to explain is removed as a fabrication prompt. persona.md is gitignored, so that half lives only on this machine; persona.md.example loses its paragraph count and word cap for the same reason.
+
+### Rule 7 amendments
+(a) Open with a thesis. The opening is its own paragraph of one or two sentences: it names the role and states, in plain terms, the two things the candidate brings to it — the two requirements argued below. The role's title may appear inside this sentence. Never open with the title alone, never open with a phrase such as "I am writing to", and never describe the company back to itself. The thesis previews; it asserts nothing the two evidence paragraphs do not prove.
+(b) Exactly two arguments. Select the requirement the posting states most often or most prominently, and the next most emphasised requirement of a different kind. The body has exactly two evidence paragraphs, one per requirement, in that order. Each paragraph argues only its own requirement and proves it with named work from the CV. If a paragraph needs more length, go deeper into the same requirement — never add another CV item to fill space. Leave the rest of the CV out; the CV is already attached.
+(j) NEW — Partial use. Take from a CV line only the part that proves the paragraph's requirement. Never reproduce a CV line's list of methods, tools, activities or certifications.
+
+### Skeleton
+[Opening: the role, and the two things the candidate brings to it — the two requirements argued below.]
+[Evidence 1: the first selected requirement, proven with named work from the CV and the result the CV states.]
+[Evidence 2: the second selected requirement, proven with named work from the CV, counterparties attributed as the CV attributes them.]
+[Gap: only if a hard requirement is unevidenced — name it, then the nearest evidenced experience.]
+[Close: what the candidate would take on here, and availability.]
+
+### Manual acceptance
+The reference posting plus one other project-manager posting, two regenerations each (four letters). Each letter:
+- Opening paragraph names the role and previews two arguments; no "I am writing to".
+- Exactly two evidence paragraphs, each on one requirement, in posting-emphasis order.
+- No CV line reproduced as a list; no method or certification the posting does not ask for.
+- Body 200–300 words.
+- Addendum 1 checks still hold (tenure, gap, close).
