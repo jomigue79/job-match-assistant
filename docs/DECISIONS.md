@@ -166,6 +166,24 @@ cannot be cancelled.
 **Would reverse it:** switching to NiceGUI native mode, which changes the
 window-ownership model entirely.
 
+## D11 — The writer no longer receives the scoring notes.
+**2026-10-01**
+
+The scorer's per-dimension reasons were given to the writer as context, and they
+leaked three times in three different ways — as an outline the letter followed,
+as a fact source for claims the CV does not make, and as the source of a gap
+sentence for a requirement the posting never marked as hard — with a delimiter
+and a preamble already in place. They are the scorer's judgement of the posting
+rather than evidence about the candidate, and everything the writer legitimately
+needs from them is in the posting itself, so the input is removed rather than
+guarded again.
+
+**Cost:** the writer loses a per-dimension summary of why the job matched, and
+must read the posting itself to select what to argue.
+**Would reverse it:** evidence that a letter written without the notes misses a
+match the scorer found, which the stored notes on the card still allow a human to
+check.
+
 ---
 
 ## Template for new entries

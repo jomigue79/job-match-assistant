@@ -17,6 +17,10 @@
 ## Structure & length
 <e.g. 3 short paragraphs, max ~250 words; open with a specific hook tied to the role>
 
+> Letter structure is set by the writer's prompt in src/skills/writer.py - the
+> salutation, what the body must do, the gap rule and the sign-off. Describe voice
+> and length preferences here; do not specify the letter's shape.
+
 ## Hard rules
 - Every claim must be grounded in cv.md. If the role requires something not in the
   CV, do not fabricate it; address transferable experience honestly instead.

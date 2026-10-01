@@ -35,8 +35,28 @@ a) Salutation, on its own line: "Hello COMPANY team," — where COMPANY is the C
 b) The body paragraphs.
 c) Sign-off: "Kind regards," on its own line, and on the next line the value under CANDIDATE NAME, copied exactly. If CANDIDATE NAME reads "(not provided)", end with the closing phrase alone. Never write a placeholder such as "[Your Name]".
 
-7. OUTPUT FORMAT:
-Return ONLY the cover letter text, ready to send, from the salutation to the sign-off. No preamble, no "here is your letter", no subject line, no metadata, no markdown formatting.
+7. WHAT THE BODY MUST DO:
+The body is 200 to 300 words and argues for this candidate in this role. It is not a summary of the CV. Rule 7 governs what the body says; the Persona section governs how it sounds. Where a persona instruction conflicts with rule 7, rule 7 wins.
+a) Open on your strongest evidence. The opening sentence presents the candidate's strongest evidence for the first selected requirement. It does not describe the role, the field, or the posting's responsibilities. Never open by restating the job title, never open with a phrase such as "I am writing to", and never describe the company back to itself: what the posting says about its values, mission, culture, size or ambitions is not material for the letter.
+b) Select by the posting's emphasis. Before writing, identify the one or two requirements the posting states most often or most prominently. Each body paragraph argues one of them. Choose CV evidence because it proves that requirement, not because it carries a result. When one CV item evidences several things, present it under the requirement it is being used to prove. Leave the rest of the CV out; the CV is already attached.
+c) Name what the CV names. Where the CV names a client, brand, platform, product, employer, tool or methodology worth citing, use that name instead of a category. Attribute it exactly as the CV does: the candidate did this work in a role at an employer. Write it as work done in that role, for a named counterparty where the CV names one — never as the candidate's own client, customer or account. If the CV names no counterparty for a piece of work, do not supply one.
+d) Attach the result the CV states. When the CV states a result for a selected item, attach it. A result never decides which item is selected. Where the CV records none, say what was done and stop. Never imply a result, a metric or an improvement the CV does not state.
+e) Use your own words, not the posting's. Do not copy wording from the job details into the letter — not a requirement phrase, not a responsibility line, and not such a line with "I" placed in front of it. If a phrase you are about to write also appears in the job details, rewrite it in plain terms describing what the candidate did. As a hard floor, six or more consecutive words shared with the job details is a copy and is not allowed. The person reading this letter wrote that posting and will recognise their own sentences.
+f) One gap, only when the requirement is hard. If the job details state a requirement as required, essential, mandatory or a minimum, and the CV does not evidence it, name it once, in one sentence, and say what the nearest evidenced experience is. Do not apologise and do not pad. Treat anything marked preferred, desirable, nice to have, a plus or a bonus as not hard, and treat an unmarked requirement as not hard. Never volunteer a weakness the posting did not ask about. If nothing hard is unevidenced, write no gap sentence at all.
+g) Close short. Close in one or two sentences: what the candidate would take on in this role, and that they are available to talk. The closing does not restate a responsibility from the posting. Do not summarise the letter, do not thank at length, and do not add superlatives about the company.
+h) Methods. Name a methodology, framework or certification only if the posting asks for it and the CV evidences it. Do not put forward one the posting does not mention, even when the CV lists it first.
+i) Tenure. Attribute every duration to the role that produced it. Never join statements about different roles with "including", "during which" or any construction that places one role's work inside another role's time span. Describe the current role as current.
+
+THE SHAPE OF THE BODY (an outline, not text to copy):
+[Opening: the candidate's strongest evidence for the requirement the posting emphasises most.]
+[Evidence 1: the piece of work proving that requirement, the counterparty named and attributed as the CV attributes it, and the result the CV states.]
+[Evidence 2: the second selected requirement, and the CV evidence that proves it.]
+[Gap: only if a hard requirement is unevidenced — name it, then the nearest evidenced experience.]
+[Close: what the candidate would take on here, and availability.]
+Every line above is an instruction about content, not wording. Do not write these labels, the brackets, or any phrase from them into the letter.
+
+8. OUTPUT FORMAT:
+Return ONLY the cover letter text, ready to send, from the salutation to the sign-off. No preamble, no "here is your letter", no subject line, no metadata, no markdown formatting. Never output the bracketed labels from rule 7's shape, or any wording taken from them.
 """
 
 USER_PROMPT_TEMPLATE = """PERSONA & WRITING CONSTRAINTS
@@ -56,9 +76,6 @@ Location: {location}
 Description:
 {description}
 </job_posting_untrusted>
-
-WHY THIS JOB MATCHES
-{match_reasons}
 
 TASK
 Write a cover letter for this role following all constraints above, including the language and letter structure rules.
@@ -83,8 +100,6 @@ class Writer:
         """
         Generates a cover letter using high-temperature, persona-grounded LLM completions.
         """
-        reasons_list = "\n".join(f"- {reason}" for reason in match_result.match_reasons)
-
         user_prompt = USER_PROMPT_TEMPLATE.format(
             persona=knowledge.persona,
             cv=knowledge.cv,
@@ -92,7 +107,6 @@ class Writer:
             title=job.title or "Unknown Title",
             location=display_location(job.location) or "Unknown Location",
             description=job.description or "",
-            match_reasons=reasons_list,
             candidate_name=self.candidate_name or _NO_CANDIDATE_NAME
         )
 

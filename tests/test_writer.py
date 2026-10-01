@@ -92,9 +92,20 @@ async def test_writer_prompt_content_and_request_shape():
     assert kb.ats_criteria not in req.user_prompt
     assert kb.ats_criteria not in req.system_prompt
 
-    # Assert all match reasons are present in the user prompt
-    for reason in mr.match_reasons:
-        assert reason in req.user_prompt
+    # The scoring notes never reach the model: a sentinel placed in match_reasons
+    # must appear in neither prompt. See docs/DECISIONS.md D11.
+    sentinel_client = FakeLLMClient(SAMPLE_LONG_RESPONSE)
+    sentinel_writer = Writer(sentinel_client)
+    sentinel_result = MatchResult(
+        identity_hash="fake-hash",
+        score=95,
+        dimension_breakdown={"overall": 9.5},
+        match_reasons=["SCORING-NOTE-SENTINEL-9f2b41"],
+        scored_at=datetime.now(timezone.utc)
+    )
+    await sentinel_writer.generate(job, kb, sentinel_result)
+    assert "SCORING-NOTE-SENTINEL-9f2b41" not in sentinel_client.last_request.user_prompt
+    assert "SCORING-NOTE-SENTINEL-9f2b41" not in sentinel_client.last_request.system_prompt
 
     # Assert anti-fabrication instruction is in the system prompt
     assert "ANTI-FABRICATION RULE" in req.system_prompt
