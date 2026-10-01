@@ -1,5 +1,5 @@
 from typing import Dict, Protocol, Type
-from .types import LLMRequest, LLMResponse
+from .types import LLMProfile, LLMRequest, LLMResponse
 
 class ProviderAdapter(Protocol):
     """
@@ -23,10 +23,10 @@ def register_provider(provider_name: str, adapter_cls: Type[ProviderAdapter]) ->
     """Registers a concrete provider adapter class."""
     PROVIDER_REGISTRY[provider_name] = adapter_cls
 
-def get_adapter(provider_name: str) -> ProviderAdapter:
+def get_adapter(provider_name: str, profile: LLMProfile) -> ProviderAdapter:
     """
-    Looks up and instantiates the registered adapter.
-    Raises ValueError on unknown provider name.
+    Looks up and instantiates the registered adapter, handing it the profile it
+    should call with. Raises ValueError on unknown provider name.
     """
     if provider_name == "openai" and "openai" not in PROVIDER_REGISTRY:
         from .openai_adapter import OpenAIAdapter
@@ -40,4 +40,4 @@ def get_adapter(provider_name: str) -> ProviderAdapter:
             f"Unknown LLM provider: '{provider_name}'. "
             f"Registered providers: {list(PROVIDER_REGISTRY.keys())}"
         )
-    return PROVIDER_REGISTRY[provider_name]()
+    return PROVIDER_REGISTRY[provider_name](profile)

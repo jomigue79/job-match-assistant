@@ -1,6 +1,5 @@
 import openai
-from config import get_settings
-from .types import LLMRequest, LLMResponse, LLMUsage, TransientLLMError, PermanentLLMError
+from .types import LLMProfile, LLMRequest, LLMResponse, LLMUsage, TransientLLMError, PermanentLLMError
 from .adapter import register_provider
 
 class OpenAIAdapter:
@@ -9,15 +8,17 @@ class OpenAIAdapter:
     """
     provider_name = "openai"
 
-    def __init__(self):
-        settings = get_settings()
-        api_key = settings.llm_api_key.get_secret_value() if settings.llm_api_key else None
-        
+    def __init__(self, profile: LLMProfile):
+        # The profile is the only source of credentials, endpoint and model: this
+        # adapter reads no settings, so two profiles can run side by side.
+        self.profile = profile
+        api_key = profile.api_key.get_secret_value() if profile.api_key else None
+
         self.client = openai.AsyncOpenAI(
             api_key=api_key,
-            base_url=settings.llm_base_url
+            base_url=profile.base_url
         )
-        self.model = settings.llm_model
+        self.model = profile.model
 
     async def _call(self, request: LLMRequest) -> LLMResponse:
         messages = [

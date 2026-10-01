@@ -91,6 +91,24 @@ class Writer:
         # From configuration (CANDIDATE_NAME), never from the posting; rendered outside the untrusted block.
         self.candidate_name = (candidate_name or "").strip()
 
+    def _profile(self):
+        """The profile behind this client, when there is one. Fake clients in tests have none."""
+        return getattr(getattr(self.llm_client, "adapter", None), "profile", None)
+
+    def _build_cost_accumulator(self) -> CostAccumulator:
+        """
+        A letter is generated outside a run, so no accumulator is handed in. One is built
+        here from the writer's own rates: the writer may run on a different model from the
+        scorer, and the main rates would price the letter wrongly.
+        """
+        profile = self._profile()
+        if profile is None:
+            return CostAccumulator()
+        return CostAccumulator(
+            llm_input_token_rate_usd=profile.input_token_rate_usd,
+            llm_output_token_rate_usd=profile.output_token_rate_usd,
+        )
+
     async def generate(
         self,
         job: JobPosting,
@@ -119,11 +137,17 @@ class Writer:
             json_mode=False
         )
 
+        owns_accumulator = cost_accumulator is None
+        if owns_accumulator:
+            cost_accumulator = self._build_cost_accumulator()
+
         response = await self.llm_client.complete(request, cost_accumulator=cost_accumulator)
         raw_text = response.text
 
         if not raw_text or len(raw_text.strip()) < 100:
             raise WriterError("Cover letter generation failed or generated response was too short (under 100 characters).")
+
+        profile = self._profile()
 
         # Log metadata only
         logger.info(
@@ -131,7 +155,21 @@ class Writer:
             identity_hash=job.identity_hash,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            provider=profile.provider if profile is not None else None,
             model=response.model
         )
+
+        if owns_accumulator:
+            summary = cost_accumulator.summary()
+            logger.info(
+                "Cover letter cost estimate",
+                identity_hash=job.identity_hash,
+                input_tokens=summary.total_input_tokens,
+                output_tokens=summary.total_output_tokens,
+                llm_calls=summary.total_llm_calls,
+                estimated_cost_usd=summary.estimated_cost_usd,
+                provider=profile.provider if profile is not None else None,
+                model=response.model
+            )
 
         return raw_text

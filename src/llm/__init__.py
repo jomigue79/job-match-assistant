@@ -1,4 +1,5 @@
 from .types import (
+    LLMProfile,
     LLMRequest,
     LLMUsage,
     LLMResponse,
@@ -17,6 +18,7 @@ from .client import (
 )
 
 __all__ = [
+    "LLMProfile",
     "LLMRequest",
     "LLMUsage",
     "LLMResponse",
